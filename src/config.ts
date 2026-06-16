@@ -10,6 +10,8 @@ export interface Config {
   idleMessageDropSecondsAfterSeconds: number;
   dropSecondsAfterSeconds: number;
   formatHoursAsDays: boolean;
+  idleHeartbeatMinutes: number | null;
+  idleHeartbeatMessage: string;
 }
 
 export const DEFAULT_CONFIG: Readonly<Config> = Object.freeze({
@@ -17,6 +19,8 @@ export const DEFAULT_CONFIG: Readonly<Config> = Object.freeze({
   idleMessageDropSecondsAfterSeconds: 3600,
   dropSecondsAfterSeconds: 900,
   formatHoursAsDays: true,
+  idleHeartbeatMinutes: null,
+  idleHeartbeatMessage: "cache keepalive — current local time is {time}",
 });
 
 const CONFIG_KEYS: readonly string[] = Object.freeze(Object.keys(DEFAULT_CONFIG));
@@ -47,6 +51,20 @@ function freezeConfig(config: Record<string, unknown>): Readonly<Config> {
       } else if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
         emitWarning(`key "${key}" must be a non-negative finite number, using default`);
         config[key] = DEFAULT_CONFIG[key as keyof Config];
+      }
+    } else if (key === "idleHeartbeatMinutes") {
+      if (config[key] === undefined || config[key] === null) {
+        config[key] = DEFAULT_CONFIG[key];
+      } else if (typeof config[key] !== "number" || !Number.isFinite(config[key]) || (config[key] as number) <= 0) {
+        emitWarning(`key "${key}" must be a positive finite number or null, using default`);
+        config[key] = DEFAULT_CONFIG[key];
+      }
+    } else if (key === "idleHeartbeatMessage") {
+      if (config[key] === undefined || config[key] === null) {
+        config[key] = DEFAULT_CONFIG[key];
+      } else if (typeof config[key] !== "string") {
+        emitWarning(`key "${key}" must be a string, using default`);
+        config[key] = DEFAULT_CONFIG[key];
       }
     } else if (typeof DEFAULT_CONFIG[key as keyof Config] === "boolean") {
       if (typeof config[key] !== "boolean") {

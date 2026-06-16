@@ -17,7 +17,8 @@ package. The extension hooks into pi's lifecycle events:
 
 ```
 src/
-  index.ts          — Pi extension entry point (lifecycle hooks, statusline, commands)
+  index.ts          — Pi extension entry point (lifecycle hooks, statusline, commands, heartbeat)
+  heartbeat.ts      — Idle heartbeat timer for cache keepalive
   time.ts           — ISO timestamp utilities
   duration.ts       — Elapsed time formatting for statusline
   format.ts         — Timing block and idle system message formatting
@@ -44,6 +45,8 @@ Stored in `${dataDir}/config.json` with these keys:
 | `idleMessageDropSecondsAfterSeconds` | 3600 | Drop trailing seconds in system message after this |
 | `dropSecondsAfterSeconds` | 900 | Statusline drops seconds after this (15 min) |
 | `formatHoursAsDays` | true | Format `[after 1d 4h]` instead of `[after 28h 0m]` |
+| `idleHeartbeatMinutes` | `null` | Default heartbeat interval in minutes; `null` disables |
+| `idleHeartbeatMessage` | `cache keepalive — current local time is {time}` | Keepalive message template; `{time}` is replaced |
 
 ### State Persistence
 
@@ -57,6 +60,18 @@ concurrent operations without needing cross-process file locks.
 - `/idle-time-reset` — Clear state for current session (or all with `--all --yes`)
 - `/idle-time-status` — Self-test: check data dir, state, config
 - `/idle-time-config` — Show current configuration
+
+### Cache Keepalive Heartbeat
+
+`idle_time_heartbeat_control` is an LLM-callable tool that enables or disables
+an idle heartbeat for the current session. When enabled, after the configured
+number of minutes of inactivity the extension sends a short user message
+(`idleHeartbeatMessage`, with `{time}` replaced by the current time). This
+triggers a real assistant turn, refreshing the Anthropic prompt cache.
+
+The heartbeat is **opt-in and disabled by default** because each firing consumes
+tokens and produces a visible chat message. The agent can toggle it during a
+session; the enabled state persists per session in the state file.
 
 ## Development
 

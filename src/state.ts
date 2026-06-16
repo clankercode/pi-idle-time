@@ -20,6 +20,7 @@ export const PERSISTED_FIELDS = new Set([
   "lastTurnExecMs",
   "modelAtLastStop",
   "modelAtLastStopAt",
+  "heartbeatEnabled",
 ]);
 
 export interface SessionState {
@@ -30,6 +31,7 @@ export interface SessionState {
   lastTurnExecMs?: number | null;
   modelAtLastStop?: string | null;
   modelAtLastStopAt?: string | null;
+  heartbeatEnabled?: boolean | null;
 }
 
 const sessionLocks = new Map<string, Promise<unknown>>();

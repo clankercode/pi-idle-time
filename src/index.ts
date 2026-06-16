@@ -10,6 +10,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { formatTimingBlock, formatIdleSystemMessage, type IdleConfig } from "./format.js";
 import { formatElapsed } from "./duration.js";
 import { loadSessionState, saveSessionState, updateSessionState, type SessionState } from "./state.js";
@@ -18,6 +19,7 @@ import { loadConfig, type Config } from "./config.js";
 import { logError } from "./log.js";
 import { writeLastResponse } from "./last-response.js";
 import { formatStatusline, type StatuslineState } from "./statusline.js";
+import { HeartbeatTimer } from "./heartbeat.js";
 import * as path from "node:path";
 import * as os from "node:os";
 import * as fs from "node:fs";
@@ -46,11 +48,14 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
   let modelAtLastStopAt: string | null = null;
   let turnStartAt: string | null = null;
   let turnDurationFrozen: string | null = null;
+  let heartbeatEnabled: boolean = false;
 
   // Timings captured during input, consumed by before_agent_start
   let pendingTimingBlock: string | null = null;
   let pendingIdleMessage: string | null = null;
   let isAgentActive = false;
+
+  let heartbeatTimer: HeartbeatTimer | null = null;
 
   function getDataDir(): string {
     try {
@@ -63,6 +68,43 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
 
   function getConfig(): Config {
     return loadConfig({ dataDir: getDataDir() });
+  }
+
+  function maybeStartHeartbeat(): void {
+    if (!sessionId) return;
+    const config = getConfig();
+    const intervalMinutes = config.idleHeartbeatMinutes;
+    if (!heartbeatEnabled || !intervalMinutes) {
+      heartbeatTimer?.stop();
+      return;
+    }
+    const lastResponseAt = lastAssistantMessageAt ?? lastStopAt;
+    if (!lastResponseAt) {
+      heartbeatTimer?.stop();
+      return;
+    }
+    if (!heartbeatTimer || heartbeatTimer.interval !== intervalMinutes) {
+      heartbeatTimer?.stop();
+      heartbeatTimer = new HeartbeatTimer({
+        intervalMinutes,
+        messageTemplate: config.idleHeartbeatMessage,
+        onFire: () => {
+          try {
+            const message = heartbeatTimer?.formatMessage() ?? config.idleHeartbeatMessage;
+            pi.sendUserMessage(message);
+          } catch (error) {
+            logError({ dataDir, sessionId, hook: "heartbeat", error });
+          }
+        },
+      });
+    } else {
+      heartbeatTimer.configure({ messageTemplate: config.idleHeartbeatMessage });
+    }
+    heartbeatTimer.start(lastResponseAt);
+  }
+
+  function stopHeartbeat(): void {
+    heartbeatTimer?.stop();
   }
 
   function updateStatusline(): void {
@@ -98,6 +140,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       lastTurnExecMs = persisted.lastTurnExecMs ?? null;
       modelAtLastStop = persisted.modelAtLastStop ?? null;
       modelAtLastStopAt = persisted.modelAtLastStopAt ?? null;
+      heartbeatEnabled = persisted.heartbeatEnabled ?? false;
     } catch (error) {
       logError({ dataDir, sessionId, hook: "session_start", error });
     }
@@ -108,6 +151,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("session_shutdown", async () => {
+    stopHeartbeat();
     if (statuslineTimer) {
       clearInterval(statuslineTimer);
       statuslineTimer = null;
@@ -126,6 +170,8 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
 
     // Steering an active agent is not a new user turn; don't reset idle state.
     if (event.streamingBehavior === "steer") return;
+
+    stopHeartbeat();
 
     try {
       const now = getNowIso();
@@ -196,6 +242,13 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
 
   // --- Agent end: record stop timestamps and turn duration ---
 
+  pi.on("agent_start", async () => {
+    if (!sessionId) return;
+    stopHeartbeat();
+  });
+
+  // --- Agent end: record stop timestamps and turn duration ---
+
   pi.on("agent_end", async () => {
     if (!sessionId) return;
 
@@ -240,6 +293,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       });
 
       await writeLastResponse({ dataDir: getDataDir(), sessionId, timestamp: now });
+      maybeStartHeartbeat();
       updateStatusline();
     } catch (error) {
       logError({ dataDir, sessionId, hook: "agent_end", error });
@@ -412,11 +466,73 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
         `- idleMessageDropSecondsAfterSeconds: ${config.idleMessageDropSecondsAfterSeconds}`,
         `- dropSecondsAfterSeconds: ${config.dropSecondsAfterSeconds}`,
         `- formatHoursAsDays: ${config.formatHoursAsDays}`,
+        `- idleHeartbeatMinutes: ${config.idleHeartbeatMinutes ?? "(disabled)"}`,
+        `- idleHeartbeatMessage: ${config.idleHeartbeatMessage}`,
+        `- heartbeatEnabled (session): ${heartbeatEnabled}`,
         "",
         `Config file: \`${path.join(dataDir, "config.json")}\``,
       ];
 
       ctx.ui.notify(lines.join("\n"), "info");
+    },
+  });
+
+  // --- Heartbeat control tool ---
+
+  pi.registerTool({
+    name: "idle_time_heartbeat_control",
+    label: "Idle Heartbeat Control",
+    description:
+      "Enable or disable the idle cache-keepalive heartbeat for this session. When enabled and the user is idle for the configured number of minutes, a short keepalive message is sent to keep the Anthropic prompt cache warm. This triggers a real LLM response and consumes tokens.",
+    parameters: Type.Object({
+      enabled: Type.Boolean({
+        description: "Whether the idle heartbeat should be active for this session.",
+      }),
+      minutes: Type.Optional(
+        Type.Number({
+          description:
+            "Optional override for the heartbeat interval in minutes. Must be positive. If omitted, the global config value idleHeartbeatMinutes is used.",
+          minimum: 0.1,
+        }),
+      ),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, toolCtx) {
+      heartbeatEnabled = params.enabled;
+
+      let intervalMinutes = params.minutes ?? getConfig().idleHeartbeatMinutes ?? 4.5;
+      if (!Number.isFinite(intervalMinutes) || intervalMinutes <= 0) {
+        intervalMinutes = 4.5;
+      }
+
+      if (sessionId) {
+        try {
+          await updateSessionState({
+            dataDir: getDataDir(),
+            sessionId,
+            patch: { heartbeatEnabled },
+          });
+        } catch (error) {
+          logError({ dataDir, sessionId, hook: "idle_time_heartbeat_control", error });
+        }
+      }
+
+      if (heartbeatEnabled) {
+        maybeStartHeartbeat();
+      } else {
+        stopHeartbeat();
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Idle heartbeat ${heartbeatEnabled ? "enabled" : "disabled"} for this session.${
+              heartbeatEnabled ? ` Interval: ${intervalMinutes} minutes.` : ""
+            }`,
+          },
+        ],
+        details: { enabled: heartbeatEnabled, intervalMinutes },
+      };
     },
   });
 }

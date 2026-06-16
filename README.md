@@ -40,6 +40,31 @@ When the user has been idle for more than the configured threshold (default
 [after 5m 2s]
 ```
 
+## Idle heartbeat (cache keepalive)
+
+When enabled, `pi-idle-time` can send a short keepalive user message after a
+period of inactivity. This triggers a real assistant turn, which keeps the
+Anthropic prompt cache warm (default cache TTL is 5 minutes; extended TTL is 1
+hour).
+
+**The heartbeat is opt-in and disabled by default.** It consumes tokens and
+produces a visible assistant response each time it fires.
+
+Enable it by asking the agent to call:
+
+```
+idle_time_heartbeat_control(enabled: true, minutes: 4.5)
+```
+
+Disable it with:
+
+```
+idle_time_heartbeat_control(enabled: false)
+```
+
+The enabled state is persisted per session. The agent can toggle it; users can
+also set a default interval in `config.json`.
+
 ## Statusline integration
 
 Displays elapsed time since the model last responded in the statusline footer.
@@ -66,7 +91,9 @@ Create `~/.pi/idle-time/config.json` to override defaults:
   "idleMessageThresholdSeconds": 10,
   "idleMessageDropSecondsAfterSeconds": 3600,
   "dropSecondsAfterSeconds": 900,
-  "formatHoursAsDays": true
+  "formatHoursAsDays": true,
+  "idleHeartbeatMinutes": null,
+  "idleHeartbeatMessage": "cache keepalive — current local time is {time}"
 }
 ```
 
@@ -76,6 +103,8 @@ Create `~/.pi/idle-time/config.json` to override defaults:
 | `idleMessageDropSecondsAfterSeconds` | 3600 | Drop trailing seconds in system message after this |
 | `dropSecondsAfterSeconds` | 900 | Statusline drops seconds after this (15 min) |
 | `formatHoursAsDays` | true | Format `[after 1d 4h]` instead of `[after 28h 0m]` |
+| `idleHeartbeatMinutes` | `null` | Default heartbeat interval in minutes; `null` disables it |
+| `idleHeartbeatMessage` | `cache keepalive — current local time is {time}` | Message template; `{time}` is replaced with current time |
 
 ## Data directory
 

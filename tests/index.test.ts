@@ -26,6 +26,7 @@ type Handler = (event: unknown, ctx: ExtensionContext) => Promise<unknown> | unk
 function createMockPi() {
   const handlers: Record<string, Handler[]> = {};
   const sentMessages: unknown[] = [];
+  const tools: unknown[] = [];
 
   const pi = {
     on(event: string, handler: Handler) {
@@ -34,8 +35,14 @@ function createMockPi() {
     sendMessage(message: unknown) {
       sentMessages.push(message);
     },
+    sendUserMessage(message: unknown) {
+      sentMessages.push({ source: "sendUserMessage", message });
+    },
     registerCommand() {
       // no-op
+    },
+    registerTool(tool: unknown) {
+      tools.push(tool);
     },
   };
 
@@ -43,6 +50,7 @@ function createMockPi() {
     pi: pi as unknown as ExtensionAPI,
     handlers,
     sentMessages,
+    tools,
     async emit<E>(event: string, payload: E, ctx: ExtensionContext) {
       for (const handler of handlers[event] ?? []) {
         await handler(payload, ctx);
@@ -162,6 +170,43 @@ describe("idleTimeExtension", () => {
     assert.equal(stateAfterInput.lastStopAt, null, "normal input should clear lastStopAt");
     assert.equal(sentMessages.length, 1, "normal input should inject a timing block");
     assert.deepEqual((sentMessages[0] as { customType: string }).customType, "idle-time");
+
+    await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+  });
+
+  it("registers the heartbeat control tool", () => {
+    const { pi, tools } = createMockPi();
+    idleTimeExtension(pi);
+    const toolNames = tools.map((t) => (t as { name: string }).name);
+    assert.ok(toolNames.includes("idle_time_heartbeat_control"));
+  });
+
+  it("heartbeat tool toggles enabled state and persists it", async () => {
+    const { pi, tools, emit } = createMockPi();
+    const sessionId = "session-hb";
+    const ctx = createMockCtx(sessionId, "model-1");
+
+    idleTimeExtension(pi);
+
+    await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+    await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+    const tool = tools.find((t) => (t as { name: string }).name === "idle_time_heartbeat_control") as {
+      execute: (toolCallId: string, params: unknown) => Promise<unknown>;
+    };
+    assert.ok(tool, "expected heartbeat control tool");
+
+    const result = await tool.execute("call-1", { enabled: true, minutes: 4.5 });
+    assert.deepEqual(result, {
+      content: [{ type: "text", text: "Idle heartbeat enabled for this session. Interval: 4.5 minutes." }],
+      details: { enabled: true, intervalMinutes: 4.5 },
+    });
+
+    const state = await loadSessionState({
+      dataDir: path.join(tmpDir, ".pi", "idle-time"),
+      sessionId,
+    });
+    assert.equal(state.heartbeatEnabled, true);
 
     await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
   });

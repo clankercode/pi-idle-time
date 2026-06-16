@@ -35,6 +35,7 @@
     "@earendil-works/pi-tui": "0.79.4",
     "@types/node": "^22.0.0",
     "tsx": "^4.22.4",
+    "typebox": "^1.1.38",
     "typescript": "^5.7.0"
   }
 }
