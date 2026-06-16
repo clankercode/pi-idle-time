@@ -17,6 +17,7 @@ import { getNowIso, diffMs } from "./time.js";
 import { loadConfig, type Config } from "./config.js";
 import { logError } from "./log.js";
 import { writeLastResponse } from "./last-response.js";
+import { formatStatusline, type StatuslineState } from "./statusline.js";
 import * as path from "node:path";
 import * as os from "node:os";
 import * as fs from "node:fs";
@@ -68,54 +69,18 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
     if (!setStatusRef) return;
 
     const config = getConfig();
-    const opts = { dropSecondsAfterSeconds: config.dropSecondsAfterSeconds };
-
-    // Format turn duration: live if active, frozen if just finished
-    let turnText: string | null = null;
-    if (isAgentActive && turnStartAt) {
-      const elapsed = diffMs(getNowIso(), turnStartAt);
-      turnText = formatElapsed(elapsed, opts);
-    } else if (turnDurationFrozen) {
-      turnText = turnDurationFrozen;
-    }
-
-    // Model change detection: show --- if model changed since last stop
-    const effectiveLastResponseAt = lastAssistantMessageAt || lastStopAt;
-    if (currentModelId && modelAtLastStopAt && effectiveLastResponseAt === modelAtLastStopAt && modelAtLastStop && currentModelId !== modelAtLastStop) {
-      const prefix = turnText ? `⏳ ${turnText} | ` : "";
-      setStatusRef(STATUSLINE_KEY, `${prefix}---`);
-      return;
-    }
-
-    // Format idle duration
-    const lastResponseAt = lastAssistantMessageAt || lastStopAt;
-    let idleText: string | null = null;
-    if (!isAgentActive && lastResponseAt) {
-      const idleMs = diffMs(getNowIso(), lastResponseAt);
-      const idleSeconds = typeof idleMs === "number" ? Math.floor(idleMs / 1000) : null;
-      if (idleSeconds !== null && idleSeconds >= 10) {
-        idleText = formatElapsed(idleMs, opts);
-      } else if (idleSeconds !== null && idleSeconds >= 0) {
-        idleText = ""; // idle but < 10s, show indicator without timer
-      }
-    }
-
-    // Compose final statusline
-    const parts: string[] = [];
-    if (turnText) parts.push(`⏳ ${turnText}`);
-
-    if (isAgentActive) {
-      // Agent running: just turn duration
-      setStatusRef(STATUSLINE_KEY, parts.join("") || undefined);
-    } else if (idleText !== null) {
-      // Agent stopped: turn duration + idle indicator/timer
-      parts.push(idleText ? `💤 ${idleText}` : "💤");
-      setStatusRef(STATUSLINE_KEY, parts.join(" | "));
-    } else if (parts.length > 0) {
-      setStatusRef(STATUSLINE_KEY, parts.join(""));
-    } else {
-      setStatusRef(STATUSLINE_KEY, undefined);
-    }
+    const s: StatuslineState = {
+      isAgentActive,
+      turnStartAt,
+      turnDurationFrozen,
+      lastStopAt,
+      lastAssistantMessageAt,
+      currentModelId,
+      modelAtLastStop,
+      modelAtLastStopAt,
+    };
+    const result = formatStatusline(s, { dropSecondsAfterSeconds: config.dropSecondsAfterSeconds });
+    setStatusRef(STATUSLINE_KEY, result);
   }
 
   // --- Session lifecycle ---
