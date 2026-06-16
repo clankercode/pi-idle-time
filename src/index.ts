@@ -21,7 +21,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import * as fs from "node:fs";
 
-const STATUSLINE_KEY = "idle-time";
+const STATUSLINE_KEY = "⏳";
 const STATUSLINE_REFRESH_MS = 1000;
 
 function resolveDataDir(): string {

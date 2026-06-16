@@ -103,13 +103,13 @@ export function formatIdleSystemMessage(valueMs: number | null | undefined, conf
   if (formatHoursAsDays && totalSeconds >= 86400) {
     const days = Math.floor(totalSeconds / 86400);
     const hours = Math.floor((totalSeconds % 86400) / 3600);
-    return `[after ${days}d ${hours}h]`;
+    return `[sent after ${days}d ${hours}h]`;
   }
 
   if (formatHoursAsDays && totalSeconds >= dropSecondsAfterSeconds) {
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
-    return `[after ${hours}h ${minutes}m]`;
+    return `[sent after ${hours}h ${minutes}m]`;
   }
 
   const hours = Math.floor(totalSeconds / 3600);
@@ -127,5 +127,5 @@ export function formatIdleSystemMessage(valueMs: number | null | undefined, conf
 
   parts.push(`${seconds}s`);
 
-  return `[after ${parts.join(" ")}]`;
+  return `[sent after ${parts.join(" ")}]`;
 }

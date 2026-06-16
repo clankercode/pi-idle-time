@@ -71,33 +71,33 @@ describe("format", () => {
 
   describe("formatIdleSystemMessage", () => {
     it("short gaps are unaffected by config", () => {
-      assert.equal(formatIdleSystemMessage(11000), "[after 11s]");
-      assert.equal(formatIdleSystemMessage(63000), "[after 1m 3s]");
-      assert.equal(formatIdleSystemMessage(302000), "[after 5m 2s]");
+      assert.equal(formatIdleSystemMessage(11000), "[sent after 11s]");
+      assert.equal(formatIdleSystemMessage(63000), "[sent after 1m 3s]");
+      assert.equal(formatIdleSystemMessage(302000), "[sent after 5m 2s]");
     });
 
     it("drops seconds at hour+ with default config", () => {
-      assert.equal(formatIdleSystemMessage(3_600_000), "[after 1h 0m]");
-      assert.equal(formatIdleSystemMessage(3_661_000), "[after 1h 1m]");
-      assert.equal(formatIdleSystemMessage(7_200_000), "[after 2h 0m]");
+      assert.equal(formatIdleSystemMessage(3_600_000), "[sent after 1h 0m]");
+      assert.equal(formatIdleSystemMessage(3_661_000), "[sent after 1h 1m]");
+      assert.equal(formatIdleSystemMessage(7_200_000), "[sent after 2h 0m]");
     });
 
     it("shows days+hours at day+ with default config", () => {
-      assert.equal(formatIdleSystemMessage(86_400_000), "[after 1d 0h]");
-      assert.equal(formatIdleSystemMessage(90_000_000), "[after 1d 1h]");
-      assert.equal(formatIdleSystemMessage(172_800_000), "[after 2d 0h]");
+      assert.equal(formatIdleSystemMessage(86_400_000), "[sent after 1d 0h]");
+      assert.equal(formatIdleSystemMessage(90_000_000), "[sent after 1d 1h]");
+      assert.equal(formatIdleSystemMessage(172_800_000), "[sent after 2d 0h]");
     });
 
     it("falls back to plain hours+minutes+seconds when formatHoursAsDays is false", () => {
       const cfg = { formatHoursAsDays: false };
-      assert.equal(formatIdleSystemMessage(3_600_000, cfg), "[after 1h 0m 0s]");
-      assert.equal(formatIdleSystemMessage(3_661_000, cfg), "[after 1h 1m 1s]");
-      assert.equal(formatIdleSystemMessage(86_400_000, cfg), "[after 24h 0m 0s]");
+      assert.equal(formatIdleSystemMessage(3_600_000, cfg), "[sent after 1h 0m 0s]");
+      assert.equal(formatIdleSystemMessage(3_661_000, cfg), "[sent after 1h 1m 1s]");
+      assert.equal(formatIdleSystemMessage(86_400_000, cfg), "[sent after 24h 0m 0s]");
     });
 
     it("respects a custom threshold", () => {
       assert.equal(formatIdleSystemMessage(5000, { idleMessageThresholdSeconds: 10 }), null);
-      assert.equal(formatIdleSystemMessage(10_500, { idleMessageThresholdSeconds: 10 }), "[after 10s]");
+      assert.equal(formatIdleSystemMessage(10_500, { idleMessageThresholdSeconds: 10 }), "[sent after 10s]");
     });
 
     it("returns null for null/NaN/Infinity", () => {

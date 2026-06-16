@@ -81,7 +81,7 @@ describe("integration", () => {
     // Idle system message should appear for >10s gap
     const config = loadConfig({ dataDir });
     const systemMsg = formatIdleSystemMessage(idleMs, config);
-    assert.equal(systemMsg, "[after 14s]");
+    assert.equal(systemMsg, "[sent after 14s]");
   });
 
   it("prompt, stop, prompt, stop, then prompt reports the second turn execution duration", async () => {
@@ -139,7 +139,7 @@ describe("integration", () => {
 
     const config = loadConfig({ dataDir });
     const systemMsg = formatIdleSystemMessage(idleMs, config);
-    assert.equal(systemMsg, "[after 32s]");
+    assert.equal(systemMsg, "[sent after 32s]");
   });
 
   it("prompt after more than one idle minute includes a visible idle system message", async () => {
@@ -173,7 +173,7 @@ describe("integration", () => {
 
     const config = loadConfig({ dataDir });
     const systemMsg = formatIdleSystemMessage(idleMs, config);
-    assert.equal(systemMsg, "[after 5m 2s]");
+    assert.equal(systemMsg, "[sent after 5m 2s]");
   });
 
   it("lastAssistantMessageAt survives UserPromptSubmit boundary", async () => {
