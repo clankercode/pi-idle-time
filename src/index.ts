@@ -172,13 +172,9 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
         });
       }
 
-      // Send visible idle system message if threshold exceeded
+      // Show idle time as a TUI notification (not sent to LLM)
       if (pendingIdleMessage) {
-        pi.sendMessage({
-          customType: "idle-time-message",
-          content: pendingIdleMessage,
-          display: true,
-        });
+        ctx.ui.notify(pendingIdleMessage, "info");
       }
 
       pendingTimingBlock = null;
