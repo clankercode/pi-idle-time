@@ -497,6 +497,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
         }),
       ),
     }),
+    renderShell: "self",
     renderCall(args, theme) {
       return new Text(
         theme.fg("toolTitle", `idle_time_heartbeat_control ${args.enabled ? "on" : "off"}`),
