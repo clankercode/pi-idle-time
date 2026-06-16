@@ -14,6 +14,7 @@ import { Type } from "typebox";
 import { formatTimingBlock, formatIdleSystemMessage, type IdleConfig } from "./format.js";
 import { formatElapsed } from "./duration.js";
 import { loadSessionState, saveSessionState, updateSessionState, type SessionState } from "./state.js";
+import { loadGlobalState, saveGlobalState } from "./global-state.js";
 import { getNowIso, diffMs } from "./time.js";
 import { loadConfig, type Config } from "./config.js";
 import { logError } from "./log.js";
@@ -148,6 +149,14 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       modelAtLastStop = persisted.modelAtLastStop ?? null;
       modelAtLastStopAt = persisted.modelAtLastStopAt ?? null;
       heartbeatEnabled = persisted.heartbeatEnabled ?? false;
+    } catch (error) {
+      logError({ dataDir, sessionId, hook: "session_start", error });
+    }
+
+    // Load global state (survives session reloads)
+    try {
+      const globalState = await loadGlobalState(getDataDir());
+      heartbeatEnabled = globalState.heartbeatEnabled;
     } catch (error) {
       logError({ dataDir, sessionId, hook: "session_start", error });
     }
@@ -536,6 +545,13 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
         } catch (error) {
           logError({ dataDir, sessionId, hook: "idle_time_heartbeat_control", error });
         }
+      }
+
+      // Persist globally so heartbeatEnabled survives /reload
+      try {
+        await saveGlobalState(getDataDir(), { heartbeatEnabled });
+      } catch (error) {
+        logError({ dataDir, sessionId, hook: "idle_time_heartbeat_control", error });
       }
 
       if (heartbeatEnabled) {
