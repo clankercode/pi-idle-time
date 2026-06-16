@@ -200,6 +200,42 @@ describe("integration", () => {
     assert.equal(elapsedMs, 45000);
   });
 
+  it("model tracking fields persist across save/load cycles", async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "idle-timing-integration-"));
+    const sessionId = "session-1";
+
+    await saveSessionState({
+      dataDir,
+      sessionId,
+      state: {
+        lastStopAt: "2026-04-17T12:00:00.000Z",
+        lastAssistantMessageAt: "2026-04-17T12:00:00.000Z",
+        lastTurnExecMs: 5000,
+        modelAtLastStop: "claude-sonnet-4-6",
+        modelAtLastStopAt: "2026-04-17T12:00:00.000Z",
+      },
+    });
+
+    const loaded = await loadSessionState({ dataDir, sessionId });
+    assert.equal(loaded.modelAtLastStop, "claude-sonnet-4-6");
+    assert.equal(loaded.modelAtLastStopAt, "2026-04-17T12:00:00.000Z");
+
+    // Model change: clear and re-save with new model
+    await updateSessionState({
+      dataDir,
+      sessionId,
+      patch: {
+        modelAtLastStop: "claude-opus-4-7",
+        modelAtLastStopAt: "2026-04-17T12:05:00.000Z",
+      },
+    });
+
+    const updated = await loadSessionState({ dataDir, sessionId });
+    assert.equal(updated.modelAtLastStop, "claude-opus-4-7");
+    assert.equal(updated.modelAtLastStopAt, "2026-04-17T12:05:00.000Z");
+    assert.equal(updated.lastTurnExecMs, 5000, "other fields should survive");
+  });
+
   it("pre-compact resets idle timer and clears model tracking", async () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "idle-timing-integration-"));
     const sessionId = "session-1";

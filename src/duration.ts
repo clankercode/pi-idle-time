@@ -18,6 +18,12 @@ export function formatElapsed(
 
   const totalMinutes = Math.floor(totalSeconds / 60);
 
+  if (totalMinutes >= 1440) {
+    const days = Math.floor(totalMinutes / 1440);
+    const hours = Math.floor((totalMinutes % 1440) / 60);
+    return `${days}d ${hours}h`;
+  }
+
   if (totalMinutes >= 60) {
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;

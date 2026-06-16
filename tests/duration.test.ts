@@ -42,6 +42,13 @@ describe("duration", () => {
     assert.equal(formatElapsed(36_060_000, DEFAULT_OPTS), "10h 1m");
   });
 
+  it("formatElapsed at or above one day shows days and hours", () => {
+    assert.equal(formatElapsed(86_400_000, DEFAULT_OPTS), "1d 0h");
+    assert.equal(formatElapsed(90_000_000, DEFAULT_OPTS), "1d 1h");
+    assert.equal(formatElapsed(172_800_000, DEFAULT_OPTS), "2d 0h");
+    assert.equal(formatElapsed(100_800_000, DEFAULT_OPTS), "1d 4h");
+  });
+
   it("formatElapsed honors a custom dropSecondsAfterSeconds threshold", () => {
     assert.equal(formatElapsed(30_000, { dropSecondsAfterSeconds: 10 }), "30s");
     assert.equal(formatElapsed(60_000, { dropSecondsAfterSeconds: 30 }), "1m");

@@ -41,6 +41,8 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
   let lastStopAt: string | null = null;
   let lastAssistantMessageAt: string | null = null;
   let lastTurnExecMs: number | null = null;
+  let modelAtLastStop: string | null = null;
+  let modelAtLastStopAt: string | null = null;
 
   // Timings captured during input, consumed by before_agent_start
   let pendingTimingBlock: string | null = null;
@@ -60,9 +62,23 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
   }
 
   function updateStatusline(): void {
-    if (!setStatusRef || !lastStopAt) return;
+    if (!setStatusRef) return;
+
+    // Model change detection: show --- if model changed since last stop
+    const effectiveLastResponseAt = lastAssistantMessageAt || lastStopAt;
+    if (currentModelId && modelAtLastStopAt && effectiveLastResponseAt === modelAtLastStopAt && modelAtLastStop && currentModelId !== modelAtLastStop) {
+      setStatusRef(STATUSLINE_KEY, "---");
+      return;
+    }
+
+    const lastResponseAt = lastAssistantMessageAt || lastStopAt;
+    if (!lastResponseAt) {
+      setStatusRef(STATUSLINE_KEY, undefined);
+      return;
+    }
+
     const now = getNowIso();
-    const elapsedMs = diffMs(now, lastStopAt);
+    const elapsedMs = diffMs(now, lastResponseAt);
     const config = getConfig();
     const formatted = formatElapsed(elapsedMs, {
       dropSecondsAfterSeconds: config.dropSecondsAfterSeconds,
@@ -83,6 +99,8 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       lastStopAt = persisted.lastStopAt ?? null;
       lastAssistantMessageAt = persisted.lastAssistantMessageAt ?? null;
       lastTurnExecMs = persisted.lastTurnExecMs ?? null;
+      modelAtLastStop = persisted.modelAtLastStop ?? null;
+      modelAtLastStopAt = persisted.modelAtLastStopAt ?? null;
     } catch (error) {
       logError({ dataDir, sessionId, hook: "session_start", error });
     }
@@ -198,6 +216,8 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
 
       lastStopAt = now;
       lastAssistantMessageAt = now;
+      modelAtLastStop = currentModelId;
+      modelAtLastStopAt = now;
 
       // Persist and update statusline
       await saveSessionState({
@@ -228,6 +248,8 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       const now = getNowIso();
       lastStopAt = now;
       lastAssistantMessageAt = now;
+      modelAtLastStop = null;
+      modelAtLastStopAt = null;
       // Clear model tracking
       await updateSessionState({
         dataDir: getDataDir(),
@@ -280,6 +302,8 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
         lastStopAt = null;
         lastAssistantMessageAt = null;
         lastTurnExecMs = null;
+        modelAtLastStop = null;
+        modelAtLastStopAt = null;
 
         if (setStatusRef) {
           setStatusRef(STATUSLINE_KEY, undefined);
