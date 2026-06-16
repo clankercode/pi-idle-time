@@ -22,7 +22,7 @@ import * as os from "node:os";
 import * as fs from "node:fs";
 
 const STATUSLINE_KEY = "idle-time";
-const STATUSLINE_REFRESH_MS = 5000;
+const STATUSLINE_REFRESH_MS = 1000;
 
 function resolveDataDir(): string {
   const homeDir = os.homedir();
@@ -47,6 +47,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
   // Timings captured during input, consumed by before_agent_start
   let pendingTimingBlock: string | null = null;
   let pendingIdleMessage: string | null = null;
+  let isAgentActive = false;
 
   function getDataDir(): string {
     try {
@@ -63,6 +64,12 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
 
   function updateStatusline(): void {
     if (!setStatusRef) return;
+
+    // Suppress statusline while agent is active (during turns, tool calls, etc.)
+    if (isAgentActive) {
+      setStatusRef(STATUSLINE_KEY, undefined);
+      return;
+    }
 
     // Model change detection: show --- if model changed since last stop
     const effectiveLastResponseAt = lastAssistantMessageAt || lastStopAt;
@@ -154,6 +161,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       // Update state
       lastUserPromptAt = now;
       lastStopAt = null; // clear so agent_end can measure the next turn
+      isAgentActive = true;
 
       // Persist the prompt timestamp
       await updateSessionState({
@@ -209,6 +217,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       lastAssistantMessageAt = now;
       modelAtLastStop = currentModelId;
       modelAtLastStopAt = now;
+      isAgentActive = false;
 
       // Persist and update statusline
       await saveSessionState({
