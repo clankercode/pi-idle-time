@@ -72,6 +72,11 @@ export function formatTimingBlock(opts: {
     if (opts.isFirstPrompt) {
       lines.push(`local_time=${time}`);
     } else {
+      // Intentional: include bare timestamp on every prompt so the model has
+      // wall-clock context for time-sensitive tasks. The original Claude Code
+      // plugin only included local_time= on the first prompt; this port
+      // includes the time on all prompts (without the key prefix) as a design
+      // improvement. Costs ~30 tokens per message.
       lines.push(time);
     }
   }

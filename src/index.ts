@@ -16,7 +16,7 @@ import { loadSessionState, saveSessionState, updateSessionState, type SessionSta
 import { getNowIso, diffMs } from "./time.js";
 import { loadConfig, type Config } from "./config.js";
 import { logError } from "./log.js";
-import { writeLastResponse, readLastResponse } from "./last-response.js";
+import { writeLastResponse } from "./last-response.js";
 import * as path from "node:path";
 import * as os from "node:os";
 import * as fs from "node:fs";
@@ -272,8 +272,59 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
   // --- Slash commands ---
 
   pi.registerCommand("idle-time-reset", {
-    description: "Reset idle-time state for the current session",
-    handler: async (_args, ctx) => {
+    description: "Reset idle-time state. Use --all --yes to wipe all sessions.",
+    handler: async (args, ctx) => {
+      const allFlag = args.includes("--all");
+      const yesFlag = args.includes("--yes");
+
+      if (allFlag) {
+        if (!yesFlag) {
+          ctx.ui.notify("Refusing to wipe all sessions without --yes. Re-run with --all --yes to confirm.", "warning");
+          return;
+        }
+
+        try {
+          const sessionDir = path.join(getDataDir(), "sessions");
+          const logDir = path.join(getDataDir(), "logs");
+          let removed = 0;
+
+          for (const dir of [sessionDir, logDir]) {
+            try {
+              const entries = await fs.promises.readdir(dir);
+              for (const entry of entries) {
+                if (entry.endsWith(".tmp")) continue;
+                try {
+                  await fs.promises.unlink(path.join(dir, entry));
+                  removed++;
+                } catch {
+                  // ignore
+                }
+              }
+            } catch {
+              // dir may not exist
+            }
+          }
+
+          // Reset in-memory state
+          lastUserPromptAt = null;
+          lastStopAt = null;
+          lastAssistantMessageAt = null;
+          lastTurnExecMs = null;
+          modelAtLastStop = null;
+          modelAtLastStopAt = null;
+
+          if (setStatusRef) {
+            setStatusRef(STATUSLINE_KEY, undefined);
+          }
+
+          ctx.ui.notify(`Reset all sessions (${removed} files)`, "info");
+        } catch (error) {
+          logError({ dataDir, sessionId, hook: "idle-time-reset", error });
+          ctx.ui.notify("Failed to reset all sessions", "error");
+        }
+        return;
+      }
+
       if (!sessionId) {
         ctx.ui.notify("No active session", "error");
         return;
