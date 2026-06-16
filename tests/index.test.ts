@@ -27,6 +27,7 @@ function createMockPi() {
   const handlers: Record<string, Handler[]> = {};
   const sentMessages: unknown[] = [];
   const tools: unknown[] = [];
+  const registeredMessageRenderers: { customType: string; renderer: unknown }[] = [];
 
   const pi = {
     on(event: string, handler: Handler) {
@@ -44,8 +45,8 @@ function createMockPi() {
     registerTool(tool: unknown) {
       tools.push(tool);
     },
-    registerMessageRenderer(_customType: string, _renderer: unknown) {
-      // no-op
+    registerMessageRenderer(customType: string, renderer: unknown) {
+      registeredMessageRenderers.push({ customType, renderer });
     },
   };
 
@@ -54,6 +55,7 @@ function createMockPi() {
     handlers,
     sentMessages,
     tools,
+    registeredMessageRenderers,
     async emit<E>(event: string, payload: E, ctx: ExtensionContext) {
       for (const handler of handlers[event] ?? []) {
         await handler(payload, ctx);
@@ -184,6 +186,16 @@ describe("idleTimeExtension", () => {
     idleTimeExtension(pi);
     const toolNames = tools.map((t) => (t as { name: string }).name);
     assert.ok(toolNames.includes("idle_time_heartbeat_control"));
+  });
+
+  it("registers the heartbeat message renderer", () => {
+    const { pi, registeredMessageRenderers } = createMockPi();
+    idleTimeExtension(pi);
+    const customTypes = registeredMessageRenderers.map((r) => r.customType);
+    assert.ok(
+      customTypes.includes("idle-time-heartbeat"),
+      `expected customTypes to include 'idle-time-heartbeat', got ${JSON.stringify(customTypes)}`,
+    );
   });
 
   it("heartbeat tool toggles enabled state and persists it", async () => {

@@ -26,6 +26,11 @@ import {
   type HeartbeatCallArgs,
   type HeartbeatResultDetails,
 } from "./heartbeat-tool-renderer.js";
+import {
+  registerHeartbeatMessageRenderer,
+  CUSTOM_TYPE as HEARTBEAT_CUSTOM_TYPE,
+  type HeartbeatMessageDetails,
+} from "./heartbeat-message-renderer.js";
 import { HeartbeatTimer } from "./heartbeat.js";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -40,6 +45,9 @@ function resolveDataDir(): string {
 }
 
 export default function idleTimeExtension(pi: ExtensionAPI): void {
+  // Register the compact message renderer for heartbeat messages
+  registerHeartbeatMessageRenderer(pi);
+
   const dataDir = resolveDataDir();
   let sessionId: string | null = null;
   let setStatusRef: ((key: string, text: string | undefined) => void) | null = null;
@@ -99,7 +107,17 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
         onFire: () => {
           try {
             const message = heartbeatTimer?.formatMessage() ?? config.idleHeartbeatMessage;
-            pi.sendUserMessage(message, { deliverAs: "followUp" });
+            const time = heartbeatTimer?.formatCompactTime() ?? "";
+            const details: HeartbeatMessageDetails = { time, intervalMinutes };
+            pi.sendMessage(
+              {
+                customType: HEARTBEAT_CUSTOM_TYPE,
+                content: message,
+                display: true,
+                details,
+              },
+              { triggerTurn: true, deliverAs: "followUp" },
+            );
           } catch (error) {
             logError({ dataDir, sessionId, hook: "heartbeat", error });
           }
