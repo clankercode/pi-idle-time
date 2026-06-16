@@ -106,6 +106,8 @@ Create `~/.pi/idle-time/config.json` to override defaults:
 | `idleHeartbeatMinutes` | `null` | Default heartbeat interval in minutes; `null` disables it |
 | `idleHeartbeatMessage` | `[cache keepalive] {time} — disable via idle_time_heartbeat_control tool.` | Message template; `{time}` is replaced with current local `HH:MM:SS`. The `[cache keepalive]` prefix tags the message; the trailing hint points at the tool to disable. |
 
+**Compact TUI rendering.** The keepalive is delivered via `pi.sendMessage` with `customType: "idle-time-heartbeat"` and a custom message renderer (see `src/heartbeat-message-renderer.ts`, modeled on the [pi compact TUI recipe](https://example.local/pi/compact-tui-renderer-recipe.md)). In the transcript, the message collapses to a single line: `♥ cache keepalive · 14:32:15 · 4.5m`. Press `Ctrl+E` to expand and see the full body. The model still receives the raw `[cache keepalive] …` text as a user-role message, so it knows the keepalive happened.
+
 ## Data directory
 
 State is stored in `~/.pi/idle-time/`:

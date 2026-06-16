@@ -32,8 +32,8 @@ function createMockPi() {
     on(event: string, handler: Handler) {
       (handlers[event] ??= []).push(handler);
     },
-    sendMessage(message: unknown) {
-      sentMessages.push(message);
+    sendMessage(message: unknown, _options?: unknown) {
+      sentMessages.push({ source: "sendMessage", message });
     },
     sendUserMessage(message: unknown) {
       sentMessages.push({ source: "sendUserMessage", message });
@@ -43,6 +43,9 @@ function createMockPi() {
     },
     registerTool(tool: unknown) {
       tools.push(tool);
+    },
+    registerMessageRenderer(_customType: string, _renderer: unknown) {
+      // no-op
     },
   };
 
@@ -169,7 +172,9 @@ describe("idleTimeExtension", () => {
 
     assert.equal(stateAfterInput.lastStopAt, null, "normal input should clear lastStopAt");
     assert.equal(sentMessages.length, 1, "normal input should inject a timing block");
-    assert.deepEqual((sentMessages[0] as { customType: string }).customType, "idle-time");
+    const sent = sentMessages[0] as { source: string; message: { customType: string } };
+    assert.equal(sent.source, "sendMessage");
+    assert.deepEqual(sent.message.customType, "idle-time");
 
     await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
   });

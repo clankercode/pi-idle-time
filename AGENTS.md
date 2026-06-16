@@ -17,16 +17,18 @@ package. The extension hooks into pi's lifecycle events:
 
 ```
 src/
-  index.ts          — Pi extension entry point (lifecycle hooks, statusline, commands, heartbeat)
-  heartbeat.ts      — Idle heartbeat timer for cache keepalive
-  time.ts           — ISO timestamp utilities
-  duration.ts       — Elapsed time formatting for statusline
-  format.ts         — Timing block and idle system message formatting
-  sanitize.ts       — Session ID sanitization
-  config.ts         — Config loading with validation and defaults
-  log.ts            — Per-session NDJSON error logger
-  last-response.ts  — Flat .lastresponse file for fast statusline reads
-  state.ts          — Per-session state persistence with atomic writes
+  index.ts                       — Pi extension entry point (lifecycle hooks, statusline, commands, heartbeat)
+  heartbeat.ts                   — Idle heartbeat timer for cache keepalive
+  heartbeat-tool-renderer.ts     — Compact renderer for the heartbeat control tool
+  heartbeat-message-renderer.ts  — Compact renderer for [cache keepalive] deliverable
+  time.ts                        — ISO timestamp utilities
+  duration.ts                    — Elapsed time formatting for statusline
+  format.ts                      — Timing block and idle system message formatting
+  sanitize.ts                    — Session ID sanitization
+  config.ts                      — Config loading with validation and defaults
+  log.ts                         — Per-session NDJSON error logger
+  last-response.ts               — Flat .lastresponse file for fast statusline reads
+  state.ts                       — Per-session state persistence with atomic writes
 ```
 
 ### Statusline Integration
