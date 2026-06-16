@@ -113,7 +113,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
                   intervalMinutes,
                 },
               },
-              { triggerTurn: true },
+              { triggerTurn: true, deliverAs: "followUp" },
             );
           } catch (error) {
             logError({ dataDir, sessionId, hook: "heartbeat", error });

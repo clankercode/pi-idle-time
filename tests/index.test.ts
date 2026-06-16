@@ -32,8 +32,8 @@ function createMockPi() {
     on(event: string, handler: Handler) {
       (handlers[event] ??= []).push(handler);
     },
-    sendMessage(message: unknown, _options?: unknown) {
-      sentMessages.push({ source: "sendMessage", message });
+    sendMessage(message: unknown, options?: unknown) {
+      sentMessages.push({ source: "sendMessage", message, options });
     },
     sendUserMessage(message: unknown) {
       sentMessages.push({ source: "sendUserMessage", message });
