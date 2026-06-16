@@ -224,11 +224,14 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       // Send timing block as a hidden message alongside the user message
       // (not in the system prompt)
       if (pendingTimingBlock) {
-        pi.sendMessage({
-          customType: "idle-time",
-          content: pendingTimingBlock,
-          display: false,
-        });
+        pi.sendMessage(
+          {
+            customType: "idle-time",
+            content: pendingTimingBlock,
+            display: false,
+          },
+          { deliverAs: "followUp" },
+        );
       }
 
       // Show idle time as a TUI notification (not sent to LLM)
