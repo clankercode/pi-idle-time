@@ -506,15 +506,11 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       );
     },
     renderResult(result, { expanded }, theme) {
-      const d = result.details as { enabled: boolean; intervalMinutes: number };
-      if (expanded) {
-        return new Text(
-          theme.fg("success", `Heartbeat ${d.enabled ? "enabled" : "disabled"}`) +
-            theme.fg("muted", ` · ${d.intervalMinutes}m interval`),
-          0,
-          0,
-        );
+      // Show nothing when collapsed — the call line itself is sufficient
+      if (!expanded) {
+        return new Text("", 0, 0);
       }
+      const d = result.details as { enabled: boolean; intervalMinutes: number };
       const state = d.enabled ? "on" : "off";
       return new Text(
         theme.fg(d.enabled ? "success" : "muted", `♥ idle heartbeat ${state} · ${d.intervalMinutes}m`),
