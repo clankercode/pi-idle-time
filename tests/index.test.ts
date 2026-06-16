@@ -1,0 +1,168 @@
+/**
+ * Tests for the extension entry point.
+ *
+ * These use a minimal in-memory Pi runtime to verify lifecycle hook behavior,
+ * including the bug where steering an active agent incorrectly reset idle state.
+ */
+
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import idleTimeExtension from "../src/index.js";
+import { loadSessionState } from "../src/state.js";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  InputEvent,
+  SessionStartEvent,
+  AgentEndEvent,
+  SessionShutdownEvent,
+} from "@earendil-works/pi-coding-agent";
+
+type Handler = (event: unknown, ctx: ExtensionContext) => Promise<unknown> | unknown;
+
+function createMockPi() {
+  const handlers: Record<string, Handler[]> = {};
+  const sentMessages: unknown[] = [];
+
+  const pi = {
+    on(event: string, handler: Handler) {
+      (handlers[event] ??= []).push(handler);
+    },
+    sendMessage(message: unknown) {
+      sentMessages.push(message);
+    },
+    registerCommand() {
+      // no-op
+    },
+  };
+
+  return {
+    pi: pi as unknown as ExtensionAPI,
+    handlers,
+    sentMessages,
+    async emit<E>(event: string, payload: E, ctx: ExtensionContext) {
+      for (const handler of handlers[event] ?? []) {
+        await handler(payload, ctx);
+      }
+    },
+  };
+}
+
+function createMockCtx(sessionId: string, modelId?: string): ExtensionContext {
+  return {
+    ui: {
+      setStatus: () => {},
+      notify: () => {},
+    },
+    sessionManager: {
+      getSessionId: () => sessionId,
+    },
+    model: modelId ? { id: modelId } : undefined,
+  } as unknown as ExtensionContext;
+}
+
+describe("idleTimeExtension", () => {
+  let originalHome: string | undefined;
+  let tmpDir: string;
+
+  before(() => {
+    originalHome = process.env.HOME;
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "idle-time-index-"));
+    process.env.HOME = tmpDir;
+  });
+
+  after(() => {
+    if (originalHome !== undefined) {
+      process.env.HOME = originalHome;
+    }
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      // ignore cleanup failures
+    }
+  });
+
+  it("steering an active agent does not reset idle state", async () => {
+    const { pi, handlers, sentMessages, emit } = createMockPi();
+    const sessionId = "session-steer";
+    const ctx = createMockCtx(sessionId, "model-1");
+
+    idleTimeExtension(pi);
+
+    await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+
+    // Simulate the assistant finishing a turn so we have a last-stop timestamp.
+    await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+    const stateAfterStop = await loadSessionState({
+      dataDir: path.join(tmpDir, ".pi", "idle-time"),
+      sessionId,
+    });
+    assert.ok(stateAfterStop.lastStopAt, "expected a lastStopAt after agent_end");
+
+    // Now steer the still-active agent.
+    const steerEvent: InputEvent = {
+      type: "input",
+      text: "focus on the bug",
+      source: "interactive",
+      streamingBehavior: "steer",
+    };
+    await emit<InputEvent>("input", steerEvent, ctx);
+
+    const stateAfterSteer = await loadSessionState({
+      dataDir: path.join(tmpDir, ".pi", "idle-time"),
+      sessionId,
+    });
+
+    assert.equal(
+      stateAfterSteer.lastStopAt,
+      stateAfterStop.lastStopAt,
+      "steer should not reset lastStopAt",
+    );
+    assert.equal(sentMessages.length, 0, "steer should not inject a timing block");
+
+    await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+  });
+
+  it("a normal user input resets idle state and injects timing context", async () => {
+    const { pi, handlers, sentMessages, emit } = createMockPi();
+    const sessionId = "session-input";
+    const ctx = createMockCtx(sessionId, "model-1");
+
+    idleTimeExtension(pi);
+
+    await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+
+    await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+    const stateAfterStop = await loadSessionState({
+      dataDir: path.join(tmpDir, ".pi", "idle-time"),
+      sessionId,
+    });
+    assert.ok(stateAfterStop.lastStopAt, "expected a lastStopAt after agent_end");
+
+    // Wait a tiny bit so the prompt is measurably after the stop.
+    await new Promise((resolve) => setTimeout(resolve, 15));
+
+    const inputEvent: InputEvent = {
+      type: "input",
+      text: "hello",
+      source: "interactive",
+    };
+    await emit<InputEvent>("input", inputEvent, ctx);
+
+    const stateAfterInput = await loadSessionState({
+      dataDir: path.join(tmpDir, ".pi", "idle-time"),
+      sessionId,
+    });
+
+    assert.equal(stateAfterInput.lastStopAt, null, "normal input should clear lastStopAt");
+    assert.equal(sentMessages.length, 1, "normal input should inject a timing block");
+    assert.deepEqual((sentMessages[0] as { customType: string }).customType, "idle-time");
+
+    await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+  });
+});

@@ -54,7 +54,7 @@ describe("statusline", () => {
     });
   });
 
-  describe("just stopped, idle < 10s", () => {
+  describe("just stopped, idle < 1s", () => {
     it("shows turn duration with idle indicator, no timer", () => {
       const result = formatStatusline(
         state({
@@ -64,7 +64,7 @@ describe("statusline", () => {
           lastAssistantMessageAt: "2026-06-16T15:00:40.000Z",
         }),
         DEFAULT_OPTS,
-        "2026-06-16T15:00:45.000Z",
+        "2026-06-16T15:00:40.500Z",
       );
       assert.equal(result, "40s | 💤");
     });
@@ -84,7 +84,7 @@ describe("statusline", () => {
     });
   });
 
-  describe("idle > 10s", () => {
+  describe("idle >= 1s", () => {
     it("shows turn duration with idle timer", () => {
       const result = formatStatusline(
         state({

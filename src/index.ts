@@ -121,8 +121,11 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
 
   // --- Input: capture timing, compute idle, inject visible idle message ---
 
-  pi.on("input", async (_event, ctx) => {
+  pi.on("input", async (event, ctx) => {
     if (!sessionId) return;
+
+    // Steering an active agent is not a new user turn; don't reset idle state.
+    if (event.streamingBehavior === "steer") return;
 
     try {
       const now = getNowIso();

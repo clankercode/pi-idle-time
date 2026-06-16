@@ -53,10 +53,10 @@ export function formatStatusline(
   if (!state.isAgentActive && lastResponseAt) {
     const idleMs = diffMs(nowIso, lastResponseAt);
     const idleSeconds = typeof idleMs === "number" ? Math.floor(idleMs / 1000) : null;
-    if (idleSeconds !== null && idleSeconds >= 10) {
+    if (idleSeconds !== null && idleSeconds >= 1) {
       idleText = formatElapsed(idleMs, opts);
     } else if (idleSeconds !== null && idleSeconds >= 0) {
-      idleText = ""; // idle but < 10s, show indicator without timer
+      idleText = ""; // idle but < 1s, show indicator without timer
     }
   }
 
