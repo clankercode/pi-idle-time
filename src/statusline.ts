@@ -69,8 +69,11 @@ export function formatStatusline(
   }
 
   if (idleText !== null) {
-    parts.push(idleText ? `💤 ${idleText}` : "💤");
-    return parts.join(" | ");
+    // Keep the idle status compact so it survives pi-bar's line truncation
+    // when many footer segments are active. The emoji is width-2; dropping the
+    // space and using compact durations saves columns.
+    parts.push(idleText ? `💤${idleText}` : "💤");
+    return parts.join("|");
   }
 
   if (parts.length > 0) {
