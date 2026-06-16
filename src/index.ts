@@ -514,7 +514,12 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
           0,
         );
       }
-      return new Text(theme.fg(d.enabled ? "success" : "muted", d.enabled ? "♥ on" : "○ off"), 0, 0);
+      const state = d.enabled ? "on" : "off";
+      return new Text(
+        theme.fg(d.enabled ? "success" : "muted", `♥ idle heartbeat ${state} · ${d.intervalMinutes}m`),
+        0,
+        0,
+      );
     },
     async execute(_toolCallId, params, _signal, _onUpdate, toolCtx) {
       heartbeatEnabled = params.enabled;
