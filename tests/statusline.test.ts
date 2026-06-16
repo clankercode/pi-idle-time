@@ -41,7 +41,7 @@ describe("statusline", () => {
         DEFAULT_OPTS,
         "2026-06-16T15:02:15.000Z",
       );
-      assert.equal(result, "2m15s");
+      assert.equal(result, "2m 15s");
     });
 
     it("returns undefined when no turnStartAt", () => {
@@ -73,14 +73,14 @@ describe("statusline", () => {
       const result = formatStatusline(
         state({
           isAgentActive: false,
-          turnDurationFrozen: "1m5s",
+          turnDurationFrozen: "1m 5s",
           lastStopAt: "2026-06-16T15:01:05.000Z",
           lastAssistantMessageAt: "2026-06-16T15:01:05.000Z",
         }),
         DEFAULT_OPTS,
         "2026-06-16T15:01:05.000Z",
       );
-      assert.equal(result, "1m5s|💤");
+      assert.equal(result, "1m 5s|💤");
     });
   });
 
@@ -96,7 +96,7 @@ describe("statusline", () => {
         DEFAULT_OPTS,
         "2026-06-16T15:02:52.000Z",
       );
-      assert.equal(result, "40s|💤2m12s");
+      assert.equal(result, "40s|💤 2m 12s");
     });
 
     it("shows only idle timer when no turn duration", () => {
@@ -110,7 +110,7 @@ describe("statusline", () => {
         DEFAULT_OPTS,
         "2026-06-16T15:03:02.000Z",
       );
-      assert.equal(result, "💤3m2s");
+      assert.equal(result, "💤 3m 2s");
     });
   });
 
@@ -129,7 +129,7 @@ describe("statusline", () => {
         DEFAULT_OPTS,
         "2026-06-16T15:01:10.000Z",
       );
-      assert.equal(result, "40s | ---");
+      assert.equal(result, "40s|---");
     });
 
     it("shows --- without turn prefix when no turn duration", () => {
@@ -163,7 +163,7 @@ describe("statusline", () => {
         DEFAULT_OPTS,
         "2026-06-16T15:02:52.000Z",
       );
-      assert.equal(result, "40s|💤2m12s");
+      assert.equal(result, "40s|💤 2m 12s");
     });
   });
 
@@ -183,7 +183,7 @@ describe("statusline", () => {
         DEFAULT_OPTS,
         "2026-06-16T15:02:00.000Z",
       );
-      assert.equal(result, "💤2m0s");
+      assert.equal(result, "💤 2m 0s");
     });
 
     it("handles frozen turn without idle (session just started)", () => {

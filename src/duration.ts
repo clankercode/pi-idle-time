@@ -21,13 +21,13 @@ export function formatElapsed(
   if (totalMinutes >= 1440) {
     const days = Math.floor(totalMinutes / 1440);
     const hours = Math.floor((totalMinutes % 1440) / 60);
-    return `${days}d${hours}h`;
+    return `${days}d ${hours}h`;
   }
 
   if (totalMinutes >= 60) {
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
-    return `${hours}h${minutes}m`;
+    return `${hours}h ${minutes}m`;
   }
 
   if (totalSeconds >= opts.dropSecondsAfterSeconds) {
@@ -35,5 +35,5 @@ export function formatElapsed(
   }
 
   const seconds = totalSeconds % 60;
-  return `${totalMinutes}m${seconds}s`;
+  return `${totalMinutes}m ${seconds}s`;
 }

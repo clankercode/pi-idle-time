@@ -43,7 +43,7 @@ export function formatStatusline(
     state.modelAtLastStop &&
     state.currentModelId !== state.modelAtLastStop
   ) {
-    const prefix = turnText ? `${turnText} | ` : "";
+    const prefix = turnText ? `${turnText}|` : "";
     return `${prefix}---`;
   }
 
@@ -70,9 +70,9 @@ export function formatStatusline(
 
   if (idleText !== null) {
     // Keep the idle status compact so it survives pi-bar's line truncation
-    // when many footer segments are active. The emoji is width-2; dropping the
-    // space and using compact durations saves columns.
-    parts.push(idleText ? `💤${idleText}` : "💤");
+    // when many footer segments are active. Use a narrow separator and keep
+    // the space between the emoji and the duration for readability.
+    parts.push(idleText ? `💤 ${idleText}` : "💤");
     return parts.join("|");
   }
 
