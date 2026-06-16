@@ -98,7 +98,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
         onFire: () => {
           try {
             const message = heartbeatTimer?.formatMessage() ?? config.idleHeartbeatMessage;
-            pi.sendUserMessage(message);
+            pi.sendUserMessage(message, { deliverAs: "followUp" });
           } catch (error) {
             logError({ dataDir, sessionId, hook: "heartbeat", error });
           }
