@@ -126,15 +126,45 @@ describe("heartbeat", () => {
 
     scheduler.advance(minutesToMs(2));
     assert.equal(fired, 1);
-    assert.equal(timer.formatMessage("2026-06-16T21:00:00+10:00"), "keepalive 2026-06-16T21:00:00+10:00");
+    assert.equal(timer.formatMessage("2026-06-16T21:00:00+10:00"), "keepalive 21:00:00");
   });
 
   it("formats message with current time placeholder", () => {
     const timer = createTimer(4.5, "cache keepalive — {time}");
     assert.equal(
       timer.formatMessage("2026-06-16T21:00:00.000+10:00"),
-      "cache keepalive — 2026-06-16T21:00:00+10:00",
+      "cache keepalive — 21:00:00",
     );
+  });
+
+  it("formatCompactTime returns HH:MM:SS (no date, no offset)", () => {
+    const timer = createTimer(4.5);
+    assert.equal(
+      timer.formatCompactTime("2026-06-16T21:00:00.000+10:00"),
+      "21:00:00",
+    );
+    assert.equal(
+      timer.formatCompactTime("2026-06-16T09:15:42.123+10:00"),
+      "09:15:42",
+    );
+  });
+
+  it("formatCompactTime does not include the date or timezone offset", () => {
+    const timer = createTimer(4.5);
+    const compact = timer.formatCompactTime("2026-06-16T21:00:00.000+10:00");
+    assert.doesNotMatch(compact, /2026-06-16/);
+    assert.doesNotMatch(compact, /\+10:00/);
+    assert.equal(compact.length, "HH:MM:SS".length, "must be exactly HH:MM:SS");
+  });
+
+  it("formatMessage uses compact HH:MM:SS in the default plugin-tagged template", () => {
+    // The default template includes a plugin tag + brief instruction.
+    const timer = createTimer(4.5, "[idle-time heartbeat] {time} — plugin keepalive; reply with a single short acknowledgement line, no tool calls.");
+    const message = timer.formatMessage("2026-06-16T21:00:00.000+10:00");
+    assert.match(message, /^\[idle-time heartbeat\] 21:00:00/);
+    assert.match(message, /no tool calls/);
+    assert.doesNotMatch(message, /2026-06-16/);
+    assert.doesNotMatch(message, /\+10:00/);
   });
 
   it("throws for non-positive interval", () => {

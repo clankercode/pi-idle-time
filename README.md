@@ -93,7 +93,7 @@ Create `~/.pi/idle-time/config.json` to override defaults:
   "dropSecondsAfterSeconds": 900,
   "formatHoursAsDays": true,
   "idleHeartbeatMinutes": null,
-  "idleHeartbeatMessage": "cache keepalive — current local time is {time}"
+  "idleHeartbeatMessage": "[idle-time heartbeat] {time} — plugin keepalive; reply with a single short acknowledgement line, no tool calls."
 }
 ```
 
@@ -104,7 +104,7 @@ Create `~/.pi/idle-time/config.json` to override defaults:
 | `dropSecondsAfterSeconds` | 900 | Statusline drops seconds after this (15 min) |
 | `formatHoursAsDays` | true | Format `[after 1d 4h]` instead of `[after 28h 0m]` |
 | `idleHeartbeatMinutes` | `null` | Default heartbeat interval in minutes; `null` disables it |
-| `idleHeartbeatMessage` | `cache keepalive — current local time is {time}` | Message template; `{time}` is replaced with current time |
+| `idleHeartbeatMessage` | `[idle-time heartbeat] {time} — plugin keepalive; reply with a single short acknowledgement line, no tool calls.` | Message template; `{time}` is replaced with current local `HH:MM:SS`. The `[idle-time heartbeat]` prefix tags the message as a plugin keepalive that the model can ignore after a brief acknowledgement. |
 
 ## Data directory
 

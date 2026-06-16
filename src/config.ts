@@ -20,7 +20,8 @@ export const DEFAULT_CONFIG: Readonly<Config> = Object.freeze({
   dropSecondsAfterSeconds: 900,
   formatHoursAsDays: true,
   idleHeartbeatMinutes: null,
-  idleHeartbeatMessage: "cache keepalive — current local time is {time}",
+  idleHeartbeatMessage:
+    "[idle-time heartbeat] {time} \u2014 plugin keepalive; reply with a single short acknowledgement line, no tool calls.",
 });
 
 const CONFIG_KEYS: readonly string[] = Object.freeze(Object.keys(DEFAULT_CONFIG));

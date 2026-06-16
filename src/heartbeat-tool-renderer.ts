@@ -24,16 +24,16 @@ export interface HeartbeatResultDetails {
 }
 
 /**
- * One-line preview shown while the heartbeat control tool is executing.
- *   idle_time_heartbeat_control on
+ * Suppressed call slot — the result line already conveys the state, and
+ * showing both would duplicate the action.
+ *
+ * Mirrors the pattern in pi-monitor's `renderMonitorListCall`: an empty
+ * `Text` produces 0 lines (verified in `@earendil-works/pi-tui` `Text.render`
+ * which returns `[]` for empty/whitespace-only text). This is the official
+ * pattern for "no visible content" slots per the pi-coding-agent docs.
  */
-export function renderHeartbeatCall(args: HeartbeatCallArgs, theme: Theme): Component {
-  const state = args.enabled ? "on" : "off";
-  return new Text(
-    INDENT + theme.fg("toolTitle", `idle_time_heartbeat_control ${state}`),
-    0,
-    0,
-  );
+export function renderHeartbeatCall(_args: HeartbeatCallArgs, _theme: Theme): Component {
+  return new Text("", 0, 0);
 }
 
 /**

@@ -109,8 +109,24 @@ export class HeartbeatTimer {
 
   /** Format a heartbeat message for the current time. */
   formatMessage(nowIso?: string): string {
-    const time = stripMs(nowIso ?? this.now());
+    const time = this.formatCompactTime(nowIso);
     return this.messageTemplate.replaceAll("{time}", time);
+  }
+
+  /**
+   * Format the current time as a compact `HH:MM:SS` local time string.
+   *
+   * Used by the default keepalive message — the LLM doesn't need the full ISO
+   * timestamp or timezone offset, just enough to acknowledge the keepalive.
+   * No padding/whitespace; always 8 characters.
+   */
+  formatCompactTime(nowIso?: string): string {
+    const iso = nowIso ?? this.now();
+    // Extract HH:MM:SS from the local ISO string.
+    // `toLocalIso` produces `YYYY-MM-DDTHH:MM:SS.sss±HH:MM`.
+    // We want the `HH:MM:SS` portion — index 11..19 (after the `T`).
+    const m = iso.match(/T(\d{2}:\d{2}:\d{2})/);
+    return m ? m[1] : iso;
   }
 
   private fireScheduled: boolean = false;

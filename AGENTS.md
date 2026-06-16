@@ -46,7 +46,7 @@ Stored in `${dataDir}/config.json` with these keys:
 | `dropSecondsAfterSeconds` | 900 | Statusline drops seconds after this (15 min) |
 | `formatHoursAsDays` | true | Format `[after 1d 4h]` instead of `[after 28h 0m]` |
 | `idleHeartbeatMinutes` | `null` | Default heartbeat interval in minutes; `null` disables |
-| `idleHeartbeatMessage` | `cache keepalive — current local time is {time}` | Keepalive message template; `{time}` is replaced |
+| `idleHeartbeatMessage` | `[idle-time heartbeat] {time} — plugin keepalive; reply with a single short acknowledgement line, no tool calls.` | Keepalive message template; `{time}` is replaced with current local `HH:MM:SS` |
 
 ### State Persistence
 
