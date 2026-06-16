@@ -43,6 +43,9 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
   let lastTurnExecMs: number | null = null;
   let modelAtLastStop: string | null = null;
   let modelAtLastStopAt: string | null = null;
+  let turnStartAt: string | null = null;
+  let frozenTurnElapsed: string | null = null;
+  let frozenTurnClearedAt: number | null = null;
 
   // Timings captured during input, consumed by before_agent_start
   let pendingTimingBlock: string | null = null;
@@ -65,10 +68,30 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
   function updateStatusline(): void {
     if (!setStatusRef) return;
 
-    // Suppress statusline while agent is active (during turns, tool calls, etc.)
+    // Suppress idle timer while agent is active — show turn timer instead
     if (isAgentActive) {
-      setStatusRef(STATUSLINE_KEY, undefined);
+      if (turnStartAt) {
+        const now = getNowIso();
+        const elapsedMs = diffMs(now, turnStartAt);
+        const config = getConfig();
+        const formatted = formatElapsed(elapsedMs, {
+          dropSecondsAfterSeconds: config.dropSecondsAfterSeconds,
+        });
+        setStatusRef(STATUSLINE_KEY, formatted ? `turn ${formatted}` : undefined);
+      }
       return;
+    }
+
+    // Show frozen turn duration briefly after agent ends, then switch to idle
+    if (frozenTurnElapsed) {
+      // Clear after 5 seconds so idle timer takes over
+      if (frozenTurnClearedAt && Date.now() - frozenTurnClearedAt > 5000) {
+        frozenTurnElapsed = null;
+        frozenTurnClearedAt = null;
+      } else {
+        setStatusRef(STATUSLINE_KEY, `turn ${frozenTurnElapsed}`);
+        return;
+      }
     }
 
     // Model change detection: show --- if model changed since last stop
@@ -162,6 +185,8 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       lastUserPromptAt = now;
       lastStopAt = null; // clear so agent_end can measure the next turn
       isAgentActive = true;
+      turnStartAt = now;
+      frozenTurnElapsed = null;
 
       // Persist the prompt timestamp
       await updateSessionState({
@@ -218,6 +243,17 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       modelAtLastStop = currentModelId;
       modelAtLastStopAt = now;
       isAgentActive = false;
+
+      // Freeze turn timer with final duration
+      if (turnStartAt) {
+        const config = getConfig();
+        const elapsedMs = diffMs(now, turnStartAt);
+        frozenTurnElapsed = formatElapsed(elapsedMs, {
+          dropSecondsAfterSeconds: config.dropSecondsAfterSeconds,
+        });
+        frozenTurnClearedAt = Date.now();
+        turnStartAt = null;
+      }
 
       // Persist and update statusline
       await saveSessionState({
