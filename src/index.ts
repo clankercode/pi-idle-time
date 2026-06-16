@@ -44,8 +44,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
   let modelAtLastStop: string | null = null;
   let modelAtLastStopAt: string | null = null;
   let turnStartAt: string | null = null;
-  let frozenTurnElapsed: string | null = null;
-  let frozenTurnClearedAt: number | null = null;
+  let turnDurationFrozen: string | null = null;
 
   // Timings captured during input, consumed by before_agent_start
   let pendingTimingBlock: string | null = null;
@@ -68,52 +67,55 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
   function updateStatusline(): void {
     if (!setStatusRef) return;
 
-    // Suppress idle timer while agent is active — show turn timer instead
-    if (isAgentActive) {
-      if (turnStartAt) {
-        const now = getNowIso();
-        const elapsedMs = diffMs(now, turnStartAt);
-        const config = getConfig();
-        const formatted = formatElapsed(elapsedMs, {
-          dropSecondsAfterSeconds: config.dropSecondsAfterSeconds,
-        });
-        setStatusRef(STATUSLINE_KEY, formatted ? `turn ${formatted}` : undefined);
-      }
-      return;
-    }
+    const config = getConfig();
+    const opts = { dropSecondsAfterSeconds: config.dropSecondsAfterSeconds };
 
-    // Show frozen turn duration briefly after agent ends, then switch to idle
-    if (frozenTurnElapsed) {
-      // Clear after 5 seconds so idle timer takes over
-      if (frozenTurnClearedAt && Date.now() - frozenTurnClearedAt > 5000) {
-        frozenTurnElapsed = null;
-        frozenTurnClearedAt = null;
-      } else {
-        setStatusRef(STATUSLINE_KEY, `turn ${frozenTurnElapsed}`);
-        return;
-      }
+    // Format turn duration: live if active, frozen if just finished
+    let turnText: string | null = null;
+    if (isAgentActive && turnStartAt) {
+      const elapsed = diffMs(getNowIso(), turnStartAt);
+      turnText = formatElapsed(elapsed, opts);
+    } else if (turnDurationFrozen) {
+      turnText = turnDurationFrozen;
     }
 
     // Model change detection: show --- if model changed since last stop
     const effectiveLastResponseAt = lastAssistantMessageAt || lastStopAt;
     if (currentModelId && modelAtLastStopAt && effectiveLastResponseAt === modelAtLastStopAt && modelAtLastStop && currentModelId !== modelAtLastStop) {
-      setStatusRef(STATUSLINE_KEY, "---");
+      const prefix = turnText ? `⏳ ${turnText} | ` : "";
+      setStatusRef(STATUSLINE_KEY, `${prefix}---`);
       return;
     }
 
+    // Format idle duration
     const lastResponseAt = lastAssistantMessageAt || lastStopAt;
-    if (!lastResponseAt) {
-      setStatusRef(STATUSLINE_KEY, undefined);
-      return;
+    let idleText: string | null = null;
+    if (!isAgentActive && lastResponseAt) {
+      const idleMs = diffMs(getNowIso(), lastResponseAt);
+      const idleSeconds = typeof idleMs === "number" ? Math.floor(idleMs / 1000) : null;
+      if (idleSeconds !== null && idleSeconds >= 10) {
+        idleText = formatElapsed(idleMs, opts);
+      } else if (idleSeconds !== null && idleSeconds >= 0) {
+        idleText = ""; // idle but < 10s, show indicator without timer
+      }
     }
 
-    const now = getNowIso();
-    const elapsedMs = diffMs(now, lastResponseAt);
-    const config = getConfig();
-    const formatted = formatElapsed(elapsedMs, {
-      dropSecondsAfterSeconds: config.dropSecondsAfterSeconds,
-    });
-    setStatusRef(STATUSLINE_KEY, formatted ?? undefined);
+    // Compose final statusline
+    const parts: string[] = [];
+    if (turnText) parts.push(`⏳ ${turnText}`);
+
+    if (isAgentActive) {
+      // Agent running: just turn duration
+      setStatusRef(STATUSLINE_KEY, parts.join("") || undefined);
+    } else if (idleText !== null) {
+      // Agent stopped: turn duration + idle indicator/timer
+      parts.push(idleText ? `💤 ${idleText}` : "💤");
+      setStatusRef(STATUSLINE_KEY, parts.join(" | "));
+    } else if (parts.length > 0) {
+      setStatusRef(STATUSLINE_KEY, parts.join(""));
+    } else {
+      setStatusRef(STATUSLINE_KEY, undefined);
+    }
   }
 
   // --- Session lifecycle ---
@@ -186,7 +188,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       lastStopAt = null; // clear so agent_end can measure the next turn
       isAgentActive = true;
       turnStartAt = now;
-      frozenTurnElapsed = null;
+      turnDurationFrozen = null;
 
       // Persist the prompt timestamp
       await updateSessionState({
@@ -248,10 +250,9 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       if (turnStartAt) {
         const config = getConfig();
         const elapsedMs = diffMs(now, turnStartAt);
-        frozenTurnElapsed = formatElapsed(elapsedMs, {
+        turnDurationFrozen = formatElapsed(elapsedMs, {
           dropSecondsAfterSeconds: config.dropSecondsAfterSeconds,
         });
-        frozenTurnClearedAt = Date.now();
         turnStartAt = null;
       }
 
