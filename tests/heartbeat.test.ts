@@ -5,6 +5,7 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { HeartbeatTimer, minutesToMs, type TimerHandle, type TimerScheduler } from "../src/heartbeat.js";
+import { DEFAULT_CONFIG } from "../src/config.js";
 
 interface FakeTimeout {
   callback: () => void;
@@ -158,13 +159,33 @@ describe("heartbeat", () => {
   });
 
   it("formatMessage uses compact HH:MM:SS in the default plugin-tagged template", () => {
-    // The default template includes a plugin tag + brief instruction.
-    const timer = createTimer(4.5, "[idle-time heartbeat] {time} — plugin keepalive; reply with a single short acknowledgement line, no tool calls.");
+    // The default template includes a plugin tag + disable hint.
+    const timer = createTimer(4.5, "[cache keepalive] {time} \u2014 disable via idle_time_heartbeat_control tool.");
     const message = timer.formatMessage("2026-06-16T21:00:00.000+10:00");
-    assert.match(message, /^\[idle-time heartbeat\] 21:00:00/);
-    assert.match(message, /no tool calls/);
+    assert.match(message, /^\[cache keepalive\] 21:00:00/);
+    assert.match(message, /disable via idle_time_heartbeat_control/);
     assert.doesNotMatch(message, /2026-06-16/);
     assert.doesNotMatch(message, /\+10:00/);
+  });
+
+  it("default keepalive message does not instruct the model to reply", () => {
+    // The keepalive should not interrupt the agent — it shouldn't say "reply"
+    // or "respond" or "acknowledge". The model is free to ignore it.
+    const timer = createTimer(4.5, "[cache keepalive] {time} \u2014 disable via idle_time_heartbeat_control tool.");
+    const message = timer.formatMessage("2026-06-16T21:00:00.000+10:00");
+    assert.doesNotMatch(message, /reply/);
+    assert.doesNotMatch(message, /respond/);
+    assert.doesNotMatch(message, /acknowledge/);
+    assert.doesNotMatch(message, /no tool calls/);
+  });
+
+  it("DEFAULT_CONFIG.idleHeartbeatMessage uses [cache keepalive] tag", () => {
+    assert.match(DEFAULT_CONFIG.idleHeartbeatMessage, /\[cache keepalive\]/);
+    assert.match(DEFAULT_CONFIG.idleHeartbeatMessage, /\{time\}/);
+  });
+
+  it("DEFAULT_CONFIG.idleHeartbeatMessage includes the disable hint", () => {
+    assert.match(DEFAULT_CONFIG.idleHeartbeatMessage, /disable via idle_time_heartbeat_control/);
   });
 
   it("throws for non-positive interval", () => {

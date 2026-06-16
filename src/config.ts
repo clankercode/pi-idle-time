@@ -21,7 +21,7 @@ export const DEFAULT_CONFIG: Readonly<Config> = Object.freeze({
   formatHoursAsDays: true,
   idleHeartbeatMinutes: null,
   idleHeartbeatMessage:
-    "[idle-time heartbeat] {time} \u2014 plugin keepalive; reply with a single short acknowledgement line, no tool calls.",
+    "[cache keepalive] {time} \u2014 disable via idle_time_heartbeat_control tool.",
 });
 
 const CONFIG_KEYS: readonly string[] = Object.freeze(Object.keys(DEFAULT_CONFIG));
