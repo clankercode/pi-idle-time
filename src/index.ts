@@ -146,6 +146,9 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       logError({ dataDir, sessionId, hook: "session_start", error });
     }
 
+    // Resume heartbeat if it was enabled and we have a last stop time
+    maybeStartHeartbeat();
+
     // Start statusline refresh
     statuslineTimer = setInterval(updateStatusline, STATUSLINE_REFRESH_MS);
     updateStatusline();
@@ -505,11 +508,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
         0,
       );
     },
-    renderResult(result, { expanded }, theme) {
-      // Show nothing when collapsed — the call line itself is sufficient
-      if (!expanded) {
-        return new Text("", 0, 0);
-      }
+    renderResult(result, _ctx, theme) {
       const d = result.details as { enabled: boolean; intervalMinutes: number };
       const state = d.enabled ? "on" : "off";
       return new Text(
