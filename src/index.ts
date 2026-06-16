@@ -162,22 +162,17 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
         patch: { lastUserPromptAt: now, lastStopAt: null },
       });
 
-      // Update statusline (will show nothing since lastStopAt is cleared)
-      if (setStatusRef) {
-        setStatusRef(STATUSLINE_KEY, undefined);
+      // Send timing block as a hidden message alongside the user message
+      // (not in the system prompt)
+      if (pendingTimingBlock) {
+        pi.sendMessage({
+          customType: "idle-time",
+          content: pendingTimingBlock,
+          display: false,
+        });
       }
-    } catch (error) {
-      logError({ dataDir, sessionId, hook: "input", error });
-    }
-  });
 
-  // --- Before agent start: inject timing context into system prompt ---
-
-  pi.on("before_agent_start", async (_event, ctx) => {
-    if (!pendingTimingBlock) return {};
-
-    try {
-      // Inject visible idle message if threshold exceeded
+      // Send visible idle system message if threshold exceeded
       if (pendingIdleMessage) {
         pi.sendMessage({
           customType: "idle-time-message",
@@ -186,15 +181,15 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
         });
       }
 
-      // Inject hidden timing context by replacing the system prompt
-      const currentPrompt = ctx.getSystemPrompt();
-      return { systemPrompt: `${currentPrompt}\n\n${pendingTimingBlock}` };
-    } catch (error) {
-      logError({ dataDir, sessionId, hook: "before_agent_start", error });
-      return {};
-    } finally {
       pendingTimingBlock = null;
       pendingIdleMessage = null;
+
+      // Update statusline (will show nothing since lastStopAt is cleared)
+      if (setStatusRef) {
+        setStatusRef(STATUSLINE_KEY, undefined);
+      }
+    } catch (error) {
+      logError({ dataDir, sessionId, hook: "input", error });
     }
   });
 
