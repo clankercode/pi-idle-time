@@ -19,7 +19,12 @@ import { loadConfig, type Config } from "./config.js";
 import { logError } from "./log.js";
 import { writeLastResponse } from "./last-response.js";
 import { formatStatusline, type StatuslineState } from "./statusline.js";
-import { Text } from "@earendil-works/pi-tui";
+import {
+  renderHeartbeatCall,
+  renderHeartbeatResult,
+  type HeartbeatCallArgs,
+  type HeartbeatResultDetails,
+} from "./heartbeat-tool-renderer.js";
 import { HeartbeatTimer } from "./heartbeat.js";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -502,22 +507,14 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       ),
     }),
     renderShell: "self",
-    renderCall(args, theme) {
-      return new Text(
-        theme.fg("toolTitle", `idle_time_heartbeat_control ${args.enabled ? "on" : "off"}`),
-        0,
-        0,
-      );
-    },
-    renderResult(result, _ctx, theme) {
-      const d = result.details as { enabled: boolean; intervalMinutes: number };
-      const state = d.enabled ? "on" : "off";
-      return new Text(
-        theme.fg(d.enabled ? "success" : "muted", `♥ idle heartbeat ${state} · ${d.intervalMinutes}m`),
-        0,
-        0,
-      );
-    },
+    renderCall: (args, theme) => renderHeartbeatCall(args as HeartbeatCallArgs, theme),
+    renderResult: (result, options, theme, context) =>
+      renderHeartbeatResult(
+        (result.details as HeartbeatResultDetails) ?? (context.args as unknown as HeartbeatResultDetails),
+        context.isError,
+        options.isPartial,
+        theme,
+      ),
     async execute(_toolCallId, params, _signal, _onUpdate, toolCtx) {
       heartbeatEnabled = params.enabled;
 
