@@ -19,6 +19,7 @@ import { loadConfig, type Config } from "./config.js";
 import { logError } from "./log.js";
 import { writeLastResponse } from "./last-response.js";
 import { formatStatusline, type StatuslineState } from "./statusline.js";
+import { Text } from "@earendil-works/pi-tui";
 import { HeartbeatTimer } from "./heartbeat.js";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -496,6 +497,25 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
         }),
       ),
     }),
+    renderCall(args, theme) {
+      return new Text(
+        theme.fg("toolTitle", `idle_time_heartbeat_control ${args.enabled ? "on" : "off"}`),
+        0,
+        0,
+      );
+    },
+    renderResult(result, { expanded }, theme) {
+      const d = result.details as { enabled: boolean; intervalMinutes: number };
+      if (expanded) {
+        return new Text(
+          theme.fg("success", `Heartbeat ${d.enabled ? "enabled" : "disabled"}`) +
+            theme.fg("muted", ` · ${d.intervalMinutes}m interval`),
+          0,
+          0,
+        );
+      }
+      return new Text(theme.fg(d.enabled ? "success" : "muted", d.enabled ? "♥ on" : "○ off"), 0, 0);
+    },
     async execute(_toolCallId, params, _signal, _onUpdate, toolCtx) {
       heartbeatEnabled = params.enabled;
 
