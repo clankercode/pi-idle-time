@@ -208,8 +208,10 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       }
 
       // Show idle time as a TUI notification (not sent to LLM)
+      // Delayed slightly so it appears after the user message renders
       if (pendingIdleMessage) {
-        ctx.ui.notify(pendingIdleMessage, "info");
+        const msg = pendingIdleMessage;
+        setTimeout(() => ctx.ui.notify(msg, "info"), 10);
       }
 
       pendingTimingBlock = null;
