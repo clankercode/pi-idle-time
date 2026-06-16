@@ -71,11 +71,11 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
     return loadConfig({ dataDir: getDataDir() });
   }
 
-  function maybeStartHeartbeat(): void {
+  function maybeStartHeartbeat(intervalOverride?: number): void {
     if (!sessionId) return;
     const config = getConfig();
-    const intervalMinutes = config.idleHeartbeatMinutes;
-    if (!heartbeatEnabled || !intervalMinutes) {
+    const intervalMinutes = intervalOverride ?? config.idleHeartbeatMinutes ?? 4.5;
+    if (!heartbeatEnabled || !Number.isFinite(intervalMinutes) || intervalMinutes <= 0) {
       heartbeatTimer?.stop();
       return;
     }
@@ -84,6 +84,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       heartbeatTimer?.stop();
       return;
     }
+
     if (!heartbeatTimer || heartbeatTimer.interval !== intervalMinutes) {
       heartbeatTimer?.stop();
       heartbeatTimer = new HeartbeatTimer({
@@ -538,7 +539,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       }
 
       if (heartbeatEnabled) {
-        maybeStartHeartbeat();
+        maybeStartHeartbeat(intervalMinutes);
       } else {
         stopHeartbeat();
       }
