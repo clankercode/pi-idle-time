@@ -180,11 +180,10 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
    * `ctx.ui.notify` rather than `pi.sendMessage` so the message is
    * NOT added to the LLM context — it's purely a UI state change.
    *
-   * Trade-off: this is a plain-text toast rather than the custom
-   * compact one-liner the heartbeat keepalive uses, because the
-   * runtime's `display: true` path also adds the message to LLM
-   * context. There is no built-in way to show a custom message in
-   * chat without it being sent to the model.
+   * The output is formatted to match the compact one-liner style of
+   * the keepalive message: leading indent + heart icon in accent
+   * color + plain text + dim interval. ANSI codes are hardcoded
+   * because the command handler does not receive a theme.
    */
   function sendHeartbeatNotification(
     ctx: { ui: { notify: (message: string, type?: "info" | "warning" | "error") => void } },
@@ -193,9 +192,16 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
   ): void {
     try {
       const state = enabled ? "on" : "off";
-      const text = enabled
-        ? `♥ idle heartbeat ${state} · ${intervalMinutes}m`
-        : `♥ idle heartbeat ${state}`;
+      // ANSI: 36 = cyan (accent), 2 = dim (muted), 0 = reset
+      const ACCENT = "\x1b[36m";
+      const DIM = "\x1b[2m";
+      const RESET = "\x1b[0m";
+      const heart = `${ACCENT}♥${RESET}`;
+      const stateText = enabled ? "idle heartbeat on" : "idle heartbeat off";
+      const tail = enabled && Number.isFinite(intervalMinutes) && intervalMinutes > 0
+        ? ` ${DIM}\u00b7 ${intervalMinutes}m${RESET}`
+        : "";
+      const text = ` ${heart} ${stateText}${tail}`;
       ctx.ui.notify(text, "info");
     } catch (error) {
       logError({ dataDir, sessionId, hook: "heartbeatNotify", error });
