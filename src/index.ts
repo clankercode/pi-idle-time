@@ -31,6 +31,11 @@ import {
   CUSTOM_TYPE as HEARTBEAT_CUSTOM_TYPE,
   type HeartbeatMessageDetails,
 } from "./heartbeat-message-renderer.js";
+import {
+  registerHeartbeatNotifyRenderer,
+  CUSTOM_TYPE as HEARTBEAT_NOTIFY_CUSTOM_TYPE,
+  type HeartbeatNotifyDetails,
+} from "./heartbeat-notify-message-renderer.js";
 import { HeartbeatTimer } from "./heartbeat.js";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -47,6 +52,7 @@ function resolveDataDir(): string {
 export default function idleTimeExtension(pi: ExtensionAPI): void {
   // Register the compact message renderer for heartbeat messages
   registerHeartbeatMessageRenderer(pi);
+  registerHeartbeatNotifyRenderer(pi);
 
   const dataDir = resolveDataDir();
   let sessionId: string | null = null;
@@ -131,6 +137,75 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
 
   function stopHeartbeat(): void {
     heartbeatTimer?.stop();
+  }
+
+  /**
+   * Shared toggle for the heartbeat. Used by both the
+   * `idle_time_heartbeat_control` tool and the `/idle-time-heartbeat`
+   * slash command. Updates in-memory state, persists to global state,
+   * and starts/stops the timer.
+   *
+   * The returned promise resolves once the per-session state write
+   * completes. Global state write is fire-and-forget since it does not
+   * block subsequent operations.
+   */
+  function setHeartbeatEnabled(enabled: boolean, minutesOverride?: number): Promise<number> {
+    heartbeatEnabled = enabled;
+
+    let intervalMinutes = minutesOverride ?? getConfig().idleHeartbeatMinutes ?? 4.5;
+    if (!Number.isFinite(intervalMinutes) || intervalMinutes <= 0) {
+      intervalMinutes = 4.5;
+    }
+
+    const sessionWrite = sessionId
+      ? updateSessionState({
+          dataDir: getDataDir(),
+          sessionId,
+          patch: { heartbeatEnabled },
+        }).catch((error) => {
+          logError({ dataDir, sessionId, hook: "setHeartbeatEnabled", error });
+        })
+      : Promise.resolve();
+
+    // Persist globally so heartbeatEnabled survives /reload
+    saveGlobalState(getDataDir(), { heartbeatEnabled }).catch((error) =>
+      logError({ dataDir, sessionId, hook: "setHeartbeatEnabled", error }),
+    );
+
+    if (heartbeatEnabled) {
+      maybeStartHeartbeat(intervalMinutes);
+    } else {
+      stopHeartbeat();
+    }
+
+    return sessionWrite.then(() => intervalMinutes);
+  }
+
+  /**
+   * Send a compact one-liner chat notification about a heartbeat toggle.
+   * The customType `idle-time-heartbeat-notify` has a renderer that
+   * collapses the message to one line in the TUI.
+   */
+  function sendHeartbeatNotification(
+    enabled: boolean,
+    intervalMinutes: number,
+    source: HeartbeatNotifyDetails["source"],
+    content?: string,
+  ): void {
+    try {
+      const details: HeartbeatNotifyDetails = { enabled, intervalMinutes, source };
+      pi.sendMessage(
+        {
+          customType: HEARTBEAT_NOTIFY_CUSTOM_TYPE,
+          content: content ?? "",
+          display: true,
+          details,
+        },
+        { deliverAs: "followUp" },
+      );
+    } catch (error) {
+      logError({ dataDir, sessionId, hook: "heartbeatNotify", error });
+    }
   }
 
   function updateStatusline(): void {
@@ -517,6 +592,57 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
     },
   });
 
+  pi.registerCommand("idle-time-heartbeat", {
+    description:
+      "Toggle the cache keepalive heartbeat. Args: on | off | toggle | status [minutes]. Without args, toggles current state. Persists across /reload.",
+    handler: async (args, ctx) => {
+      const tokens = args.trim().split(/\s+/).filter(Boolean);
+      const action = (tokens[0] ?? "toggle").toLowerCase();
+      const minutesArg = tokens[1] ? Number(tokens[1]) : undefined;
+      if (minutesArg !== undefined && (!Number.isFinite(minutesArg) || minutesArg <= 0)) {
+        ctx.ui.notify(
+          `Invalid minutes value: \`${tokens[1]}\`. Must be a positive number.`,
+          "error",
+        );
+        return;
+      }
+
+      if (action === "status") {
+        const config = getConfig();
+        const interval = config.idleHeartbeatMinutes ?? 4.5;
+        const state = heartbeatEnabled ? "on" : "off";
+        ctx.ui.notify(
+          `Idle heartbeat is **${state}**` +
+            (heartbeatEnabled ? ` (interval: ${interval}m)` : "") +
+            ".",
+          "info",
+        );
+        sendHeartbeatNotification(heartbeatEnabled, interval, "command", `status: ${state}`);
+        return;
+      }
+
+      let enabled: boolean;
+      if (action === "on") enabled = true;
+      else if (action === "off") enabled = false;
+      else if (action === "toggle") enabled = !heartbeatEnabled;
+      else {
+        ctx.ui.notify(
+          `Unknown action: \`${action}\`. Use: on | off | toggle | status [minutes]`,
+          "error",
+        );
+        return;
+      }
+
+      const intervalMinutes = await setHeartbeatEnabled(enabled, minutesArg);
+      sendHeartbeatNotification(
+        enabled,
+        intervalMinutes,
+        "command",
+        `${enabled ? "enabled" : "disabled"}${enabled ? ` via /idle-time-heartbeat` : ""}`,
+      );
+    },
+  });
+
   // --- Heartbeat control tool ---
 
   pi.registerTool({
@@ -545,38 +671,8 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
         options.isPartial,
         theme,
       ),
-    async execute(_toolCallId, params, _signal, _onUpdate, toolCtx) {
-      heartbeatEnabled = params.enabled;
-
-      let intervalMinutes = params.minutes ?? getConfig().idleHeartbeatMinutes ?? 4.5;
-      if (!Number.isFinite(intervalMinutes) || intervalMinutes <= 0) {
-        intervalMinutes = 4.5;
-      }
-
-      if (sessionId) {
-        try {
-          await updateSessionState({
-            dataDir: getDataDir(),
-            sessionId,
-            patch: { heartbeatEnabled },
-          });
-        } catch (error) {
-          logError({ dataDir, sessionId, hook: "idle_time_heartbeat_control", error });
-        }
-      }
-
-      // Persist globally so heartbeatEnabled survives /reload
-      try {
-        await saveGlobalState(getDataDir(), { heartbeatEnabled });
-      } catch (error) {
-        logError({ dataDir, sessionId, hook: "idle_time_heartbeat_control", error });
-      }
-
-      if (heartbeatEnabled) {
-        maybeStartHeartbeat(intervalMinutes);
-      } else {
-        stopHeartbeat();
-      }
+    async execute(_toolCallId, params, _signal, _onUpdate, _toolCtx) {
+      const intervalMinutes = await setHeartbeatEnabled(params.enabled, params.minutes);
 
       return {
         content: [

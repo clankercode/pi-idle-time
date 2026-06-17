@@ -68,6 +68,11 @@ When the user has been idle for more than `idleMessageThresholdSeconds`
 | `/idle-time-reset --all --yes` | Wipe all sessions and logs |
 | `/idle-time-status` | Show plugin status (data dir, state, config) |
 | `/idle-time-config` | Show current configuration |
+| `/idle-time-heartbeat on` | Enable the idle heartbeat (persists across `/reload`) |
+| `/idle-time-heartbeat off` | Disable the idle heartbeat |
+| `/idle-time-heartbeat` / `toggle` | Flip the current state |
+| `/idle-time-heartbeat status` | Show whether the heartbeat is on or off |
+| `/idle-time-heartbeat on 10` | Enable with a 10-minute override |
 
 ## Tool: `idle_time_heartbeat_control`
 
@@ -84,7 +89,8 @@ idle_time_heartbeat_control(enabled: false)
   Falls back to `config.idleHeartbeatMinutes`, then 4.5.
 
 The enabled state persists across `/reload` via
-`~/.pi/idle-time/global.json`.
+`~/.pi/idle-time/global.json`. Users can also toggle it directly with
+the `/idle-time-heartbeat` slash command (see Commands above).
 
 ## Statusline
 
@@ -224,7 +230,7 @@ survives `/reload` — it is not tied to any session.
 
 ```bash
 pnpm install
-pnpm test    # 132 tests
+pnpm test    # 151 tests
 pnpm check   # typecheck
 ```
 
@@ -242,6 +248,7 @@ src/
   heartbeat.ts                   — Idle heartbeat timer for cache keepalive
   heartbeat-tool-renderer.ts     — Compact renderer for the heartbeat control tool
   heartbeat-message-renderer.ts  — Compact renderer for [cache keepalive] deliverable
+  heartbeat-notify-message-renderer.ts — Compact renderer for /idle-time-heartbeat toggle notifications
   global-state.ts                — Global state file (heartbeatEnabled, survives /reload)
   time.ts                        — ISO timestamp utilities
   duration.ts                    — Elapsed time formatting for statusline
