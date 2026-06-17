@@ -31,11 +31,6 @@ import {
   CUSTOM_TYPE as HEARTBEAT_CUSTOM_TYPE,
   type HeartbeatMessageDetails,
 } from "./heartbeat-message-renderer.js";
-import {
-  registerHeartbeatNotifyRenderer,
-  CUSTOM_TYPE as HEARTBEAT_NOTIFY_CUSTOM_TYPE,
-  type HeartbeatNotifyDetails,
-} from "./heartbeat-notify-message-renderer.js";
 import { HeartbeatTimer } from "./heartbeat.js";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -52,7 +47,6 @@ function resolveDataDir(): string {
 export default function idleTimeExtension(pi: ExtensionAPI): void {
   // Register the compact message renderer for heartbeat messages
   registerHeartbeatMessageRenderer(pi);
-  registerHeartbeatNotifyRenderer(pi);
 
   const dataDir = resolveDataDir();
   let sessionId: string | null = null;
@@ -182,27 +176,27 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
   }
 
   /**
-   * Send a compact one-liner chat notification about a heartbeat toggle.
-   * The customType `idle-time-heartbeat-notify` has a renderer that
-   * collapses the message to one line in the TUI.
+   * Show a UI-only notification about a heartbeat toggle. Uses
+   * `ctx.ui.notify` rather than `pi.sendMessage` so the message is
+   * NOT added to the LLM context — it's purely a UI state change.
+   *
+   * Trade-off: this is a plain-text toast rather than the custom
+   * compact one-liner the heartbeat keepalive uses, because the
+   * runtime's `display: true` path also adds the message to LLM
+   * context. There is no built-in way to show a custom message in
+   * chat without it being sent to the model.
    */
   function sendHeartbeatNotification(
+    ctx: { ui: { notify: (message: string, type?: "info" | "warning" | "error") => void } },
     enabled: boolean,
     intervalMinutes: number,
-    source: HeartbeatNotifyDetails["source"],
-    content?: string,
   ): void {
     try {
-      const details: HeartbeatNotifyDetails = { enabled, intervalMinutes, source };
-      pi.sendMessage(
-        {
-          customType: HEARTBEAT_NOTIFY_CUSTOM_TYPE,
-          content: content ?? "",
-          display: true,
-          details,
-        },
-        { deliverAs: "followUp" },
-      );
+      const state = enabled ? "on" : "off";
+      const text = enabled
+        ? `♥ idle heartbeat ${state} · ${intervalMinutes}m`
+        : `♥ idle heartbeat ${state}`;
+      ctx.ui.notify(text, "info");
     } catch (error) {
       logError({ dataDir, sessionId, hook: "heartbeatNotify", error });
     }
@@ -617,7 +611,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
             ".",
           "info",
         );
-        sendHeartbeatNotification(heartbeatEnabled, interval, "command", `status: ${state}`);
+        sendHeartbeatNotification(ctx, heartbeatEnabled, interval);
         return;
       }
 
@@ -634,12 +628,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       }
 
       const intervalMinutes = await setHeartbeatEnabled(enabled, minutesArg);
-      sendHeartbeatNotification(
-        enabled,
-        intervalMinutes,
-        "command",
-        `${enabled ? "enabled" : "disabled"}${enabled ? ` via /idle-time-heartbeat` : ""}`,
-      );
+      sendHeartbeatNotification(ctx, enabled, intervalMinutes);
     },
   });
 

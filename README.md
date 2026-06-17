@@ -74,6 +74,24 @@ When the user has been idle for more than `idleMessageThresholdSeconds`
 | `/idle-time-heartbeat status` | Show whether the heartbeat is on or off |
 | `/idle-time-heartbeat on 10` | Enable with a 10-minute override |
 
+When toggled, the command:
+
+- Updates in-memory `heartbeatEnabled`
+- Persists to global state (survives `/reload`)
+- Shows a UI-only notification via `ctx.ui.notify` (NOT sent to LLM)
+
+The notification is a plain-text toast:
+
+  on:  `♥ idle heartbeat on · 4.5m`
+  off: `♥ idle heartbeat off`
+
+The notification is plain text rather than the custom compact one-liner
+the keepalive uses, because the runtime's `display: true` path also
+adds the message to LLM context. There is no built-in way to show a
+custom message in chat without it being sent to the model. Toggling is
+a pure UI state change, so we use `ctx.ui.notify` to keep it out of
+the LLM's context.
+
 ## Tool: `idle_time_heartbeat_control`
 
 LLM-callable tool that enables or disables the idle heartbeat for the
@@ -230,7 +248,7 @@ survives `/reload` — it is not tied to any session.
 
 ```bash
 pnpm install
-pnpm test    # 151 tests
+pnpm test    # 139 tests
 pnpm check   # typecheck
 ```
 
@@ -248,7 +266,6 @@ src/
   heartbeat.ts                   — Idle heartbeat timer for cache keepalive
   heartbeat-tool-renderer.ts     — Compact renderer for the heartbeat control tool
   heartbeat-message-renderer.ts  — Compact renderer for [cache keepalive] deliverable
-  heartbeat-notify-message-renderer.ts — Compact renderer for /idle-time-heartbeat toggle notifications
   global-state.ts                — Global state file (heartbeatEnabled, survives /reload)
   time.ts                        — ISO timestamp utilities
   duration.ts                    — Elapsed time formatting for statusline

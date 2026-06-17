@@ -200,16 +200,6 @@ describe("idleTimeExtension", () => {
     );
   });
 
-  it("registers the heartbeat notify renderer", () => {
-    const { pi, registeredMessageRenderers } = createMockPi();
-    idleTimeExtension(pi);
-    const customTypes = registeredMessageRenderers.map((r) => r.customType);
-    assert.ok(
-      customTypes.includes("idle-time-heartbeat-notify"),
-      `expected customTypes to include 'idle-time-heartbeat-notify', got ${JSON.stringify(customTypes)}`,
-    );
-  });
-
   it("registers the /idle-time-heartbeat command", () => {
     const { pi, commands } = createMockPi();
     idleTimeExtension(pi);
@@ -247,10 +237,19 @@ describe("idleTimeExtension", () => {
   });
 
   describe("/idle-time-heartbeat command", () => {
-    it("toggles the heartbeat on when called with `on` and sends a compact notification", async () => {
-      const { pi, commands, sentMessages, emit } = createMockPi();
-      const sessionId = "session-cmd-on";
+    function makeCtx(sessionId: string) {
+      const calls: { message: string; type?: string }[] = [];
       const ctx = createMockCtx(sessionId, "model-1");
+      (ctx.ui as unknown as { notify: (m: string, t?: string) => void }).notify = (m, t) => {
+        calls.push({ message: m, type: t });
+      };
+      return { ctx, calls };
+    }
+
+    it("toggles the heartbeat on when called with `on` and shows a UI notification", async () => {
+      const { pi, commands, emit } = createMockPi();
+      const sessionId = "session-cmd-on";
+      const { ctx, calls } = makeCtx(sessionId);
 
       idleTimeExtension(pi);
       await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
@@ -266,22 +265,23 @@ describe("idleTimeExtension", () => {
       });
       assert.equal(state.heartbeatEnabled, true);
 
-      const notif = sentMessages.find(
-        (m) => (m as { message: { customType: string } }).message.customType === "idle-time-heartbeat-notify",
-      );
-      assert.ok(notif, "expected a heartbeat-notify message");
-      const msg = (notif as { message: { details: { enabled: boolean; intervalMinutes: number; source: string } } }).message;
-      assert.equal(msg.details.enabled, true);
-      assert.equal(msg.details.intervalMinutes, 4.5);
-      assert.equal(msg.details.source, "command");
+      assert.equal(calls.length, 1);
+      assert.match(calls[0].message, /on/);
+      assert.match(calls[0].message, /4\.5m/);
+      assert.equal(calls[0].type, "info");
+
+      // Verify the message was NOT sent to the LLM
+      const sent = pi as unknown as { _sentMessages?: unknown[] };
+      // (createMockPi captures sentMessages, but we didn't use it here — the
+      // important guarantee is that notify was called, not sendMessage)
 
       await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
     });
 
-    it("toggles the heartbeat off when called with `off`", async () => {
-      const { pi, commands, sentMessages, emit } = createMockPi();
+    it("toggles the heartbeat off when called with `off` and shows a UI notification", async () => {
+      const { pi, commands, emit } = createMockPi();
       const sessionId = "session-cmd-off";
-      const ctx = createMockCtx(sessionId, "model-1");
+      const { ctx, calls } = makeCtx(sessionId);
 
       idleTimeExtension(pi);
       await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
@@ -289,9 +289,7 @@ describe("idleTimeExtension", () => {
 
       const cmd = commands.get("idle-time-heartbeat");
       assert.ok(cmd, "expected /idle-time-heartbeat command");
-      // First turn on
       await cmd.handler("on", ctx);
-      // Then turn off
       await cmd.handler("off", ctx);
 
       const state = await loadSessionState({
@@ -300,12 +298,9 @@ describe("idleTimeExtension", () => {
       });
       assert.equal(state.heartbeatEnabled, false);
 
-      const notifications = sentMessages.filter(
-        (m) => (m as { message: { customType: string } }).message.customType === "idle-time-heartbeat-notify",
-      );
-      assert.equal(notifications.length, 2);
-      const last = (notifications[1] as { message: { details: { enabled: boolean } } }).message;
-      assert.equal(last.details.enabled, false);
+      assert.equal(calls.length, 2);
+      assert.match(calls[0].message, /on/);
+      assert.match(calls[1].message, /off/);
 
       await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
     });
@@ -313,7 +308,7 @@ describe("idleTimeExtension", () => {
     it("toggles current state when called with no arg or `toggle`", async () => {
       const { pi, commands, emit } = createMockPi();
       const sessionId = "session-cmd-toggle";
-      const ctx = createMockCtx(sessionId, "model-1");
+      const { ctx } = makeCtx(sessionId);
 
       idleTimeExtension(pi);
       await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
@@ -321,7 +316,6 @@ describe("idleTimeExtension", () => {
 
       const cmd = commands.get("idle-time-heartbeat");
       assert.ok(cmd, "expected /idle-time-heartbeat command");
-      // No arg: should toggle from off -> on
       await cmd.handler("", ctx);
 
       const state1 = await loadSessionState({
@@ -330,7 +324,6 @@ describe("idleTimeExtension", () => {
       });
       assert.equal(state1.heartbeatEnabled, true);
 
-      // Toggle again: on -> off
       await cmd.handler("toggle", ctx);
 
       const state2 = await loadSessionState({
@@ -342,10 +335,10 @@ describe("idleTimeExtension", () => {
       await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
     });
 
-    it("rejects invalid minutes values", async () => {
-      const { pi, commands, sentMessages, emit } = createMockPi();
+    it("rejects invalid minutes values with a warning notification", async () => {
+      const { pi, commands, emit } = createMockPi();
       const sessionId = "session-cmd-invalid";
-      const ctx = createMockCtx(sessionId, "model-1");
+      const { ctx, calls } = makeCtx(sessionId);
 
       idleTimeExtension(pi);
       await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
@@ -355,19 +348,23 @@ describe("idleTimeExtension", () => {
       assert.ok(cmd, "expected /idle-time-heartbeat command");
       await cmd.handler("on abc", ctx);
 
-      // No notification should be sent for invalid input
-      const notifs = sentMessages.filter(
-        (m) => (m as { message: { customType: string } }).message.customType === "idle-time-heartbeat-notify",
-      );
-      assert.equal(notifs.length, 0);
+      // Should show error notification, no state change
+      const state = await loadSessionState({
+        dataDir: path.join(tmpDir, ".pi", "idle-time"),
+        sessionId,
+      });
+      assert.equal(state.heartbeatEnabled ?? false, false);
+
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].type, "error");
 
       await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
     });
 
-    it("rejects unknown actions", async () => {
-      const { pi, commands, sentMessages, emit } = createMockPi();
+    it("rejects unknown actions with an error notification", async () => {
+      const { pi, commands, emit } = createMockPi();
       const sessionId = "session-cmd-unknown";
-      const ctx = createMockCtx(sessionId, "model-1");
+      const { ctx, calls } = makeCtx(sessionId);
 
       idleTimeExtension(pi);
       await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
@@ -377,10 +374,30 @@ describe("idleTimeExtension", () => {
       assert.ok(cmd, "expected /idle-time-heartbeat command");
       await cmd.handler("what", ctx);
 
-      const notifs = sentMessages.filter(
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].type, "error");
+
+      await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+    });
+
+    it("does NOT add a notification to the LLM context", async () => {
+      const { pi, commands, sentMessages, emit } = createMockPi();
+      const sessionId = "session-cmd-nocontext";
+      const { ctx } = makeCtx(sessionId);
+
+      idleTimeExtension(pi);
+      await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+      const cmd = commands.get("idle-time-heartbeat");
+      assert.ok(cmd, "expected /idle-time-heartbeat command");
+      await cmd.handler("on", ctx);
+
+      // No message should have been sent via pi.sendMessage
+      const heartbeatNotifs = sentMessages.filter(
         (m) => (m as { message: { customType: string } }).message.customType === "idle-time-heartbeat-notify",
       );
-      assert.equal(notifs.length, 0);
+      assert.equal(heartbeatNotifs.length, 0, "expected no LLM-context message for toggle");
 
       await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
     });
