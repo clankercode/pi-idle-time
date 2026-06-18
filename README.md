@@ -21,6 +21,9 @@ keepalive message to refresh the Anthropic prompt cache.
 - **Steer-aware** — steering an active agent does not reset idle state.
 - **Persistent toggle** — the heartbeat enabled state survives `/reload`
   via a global state file.
+- **Idle goal reminders** — `/idle-goal <description>` sets a goal the
+  model is reminded of after the heartbeat interval. Goal reminders take
+  precedence over the keepalive while a goal is active.
 
 ## Installation
 
@@ -73,6 +76,9 @@ When the user has been idle for more than `idleMessageThresholdSeconds`
 | `/idle-time-heartbeat` / `toggle` | Flip the current state |
 | `/idle-time-heartbeat status` | Show whether the heartbeat is on or off |
 | `/idle-time-heartbeat on 10` | Enable with a 10-minute override |
+| `/idle-goal <description>` | Set an idle goal reminder |
+| `/idle-goal` / `/idle-goal --status` | Show the active goal |
+| `/idle-goal --complete` | Mark the active goal complete |
 
 When toggled, the command:
 
@@ -94,21 +100,48 @@ the LLM's context.
 
 ## Tool: `idle_time_heartbeat_control`
 
-LLM-callable tool that enables or disables the idle heartbeat for the
-current session.
+LLM-callable tool that controls the idle heartbeat and idle goal for
+the current session.
 
 ```ts
 idle_time_heartbeat_control(enabled: true, minutes: 4.5)
 idle_time_heartbeat_control(enabled: false)
+idle_time_heartbeat_control(goal: "draft release notes for v0.4.1")
+idle_time_heartbeat_control(completeGoal: true)
 ```
 
-- `enabled` (boolean, required) — whether the heartbeat should be active
+- `enabled` (boolean, optional) — whether the heartbeat should be active.
+  Omit when only changing the goal.
 - `minutes` (number, optional) — override the interval. Must be positive.
-  Falls back to `config.idleHeartbeatMinutes`, then 4.5.
+  Falls back to `config.idleHeartbeatMinutes`, then 4.5. Remembered per
+  session per mode (heartbeat vs. goal).
+- `goal` (string, optional) — set the idle goal description. Pass an
+  empty string to clear without completing.
+- `completeGoal` (boolean, optional) — mark the active goal complete and
+  resume the heartbeat if enabled. Ignored when `goal` is also set.
 
 The enabled state persists across `/reload` via
-`~/.pi/idle-time/global.json`. Users can also toggle it directly with
-the `/idle-time-heartbeat` slash command (see Commands above).
+`~/.pi/idle-time/global.json`. The active goal persists per session in
+`~/.pi/idle-time/sessions/<id>.json`. Users can also toggle directly
+with the `/idle-time-heartbeat` and `/idle-goal` slash commands (see
+Commands above).
+
+## Idle goal reminders
+
+`/idle-goal <description>` sets a per-session goal. After the configured
+interval of inactivity the extension sends the LLM:
+
+```
+[goal reminder] HH:MM:SS
+<description>
+
+<system-reminder>Use idle_time_heartbeat_control with completeGoal=true to mark the goal complete.</system-reminder>
+```
+
+The user sees a compact TUI render
+(`🎯 idle goal · <preview> · <time> · <interval>`). Goal reminders take
+precedence over the keepalive heartbeat while a goal is active, and
+fire regardless of the heartbeat's `enabled` flag.
 
 ## Statusline
 
@@ -248,7 +281,7 @@ survives `/reload` — it is not tied to any session.
 
 ```bash
 pnpm install
-pnpm test    # 139 tests
+pnpm test    # 175 tests
 pnpm check   # typecheck
 ```
 
@@ -266,6 +299,8 @@ src/
   heartbeat.ts                   — Idle heartbeat timer for cache keepalive
   heartbeat-tool-renderer.ts     — Compact renderer for the heartbeat control tool
   heartbeat-message-renderer.ts  — Compact renderer for [cache keepalive] deliverable
+  goal.ts                        — Idle goal reminder message formatting
+  goal-message-renderer.ts       — Compact renderer for [goal reminder] deliverable
   global-state.ts                — Global state file (heartbeatEnabled, survives /reload)
   time.ts                        — ISO timestamp utilities
   duration.ts                    — Elapsed time formatting for statusline
