@@ -37,5 +37,20 @@
     "tsx": "^4.22.4",
     "typebox": "^1.1.38",
     "typescript": "^5.7.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clankercode/pi-idle-time.git"
+  },
+  "homepage": "https://github.com/clankercode/pi-idle-time#readme",
+  "bugs": {
+    "url": "https://github.com/clankercode/pi-idle-time/issues"
+  },
+  "author": "XertroV",
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
