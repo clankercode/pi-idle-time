@@ -22,8 +22,8 @@ export interface GoalMessageDetails {
  *   [goal reminder] 19:46:13
  *   refactor the auth module
  *
- *   <system-reminder>Use idle_time_heartbeat_control with completeGoal=true to mark the goal complete.</system-reminder>
+ *   <system-reminder>Use idle_time_heartbeat_control with completeGoal=true only when the underlying task is actually finished. Idle does not mean done, and receiving this reminder does not mean the goal is complete. If work is still in progress, leave the goal active and continue working or send a status update.</system-reminder>
  */
 export function formatGoalMessage(goal: string, time: string): string {
-  return `[goal reminder] ${time}\n${goal}\n\n<system-reminder>Use idle_time_heartbeat_control with completeGoal=true to mark the goal complete.</system-reminder>`;
+  return `[goal reminder] ${time}\n${goal}\n\n<system-reminder>Use idle_time_heartbeat_control with completeGoal=true only when the underlying task is actually finished. Idle does not mean done, and receiving this reminder does not mean the goal is complete. If work is still in progress, leave the goal active and continue working or send a status update.</system-reminder>`;
 }

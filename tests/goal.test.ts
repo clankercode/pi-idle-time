@@ -14,7 +14,7 @@ describe("goal", () => {
 
     assert.equal(
       message,
-      `[goal reminder] ${time}\n${goal}\n\n<system-reminder>Use idle_time_heartbeat_control with completeGoal=true to mark the goal complete.</system-reminder>`,
+      `[goal reminder] ${time}\n${goal}\n\n<system-reminder>Use idle_time_heartbeat_control with completeGoal=true only when the underlying task is actually finished. Idle does not mean done, and receiving this reminder does not mean the goal is complete. If work is still in progress, leave the goal active and continue working or send a status update.</system-reminder>`,
     );
   });
 
@@ -39,5 +39,12 @@ describe("goal", () => {
     const message = formatGoalMessage("do a thing", "12:00:00");
     assert.match(message, /idle_time_heartbeat_control/);
     assert.match(message, /completeGoal=true/);
+  });
+
+  it("makes clear that idle is not the same as done", () => {
+    const message = formatGoalMessage("do a thing", "12:00:00");
+    assert.match(message, /Idle does not mean done/i);
+    assert.match(message, /receiving this reminder does not mean the goal is complete/i);
+    assert.match(message, /continue working or send a status update/i);
   });
 });

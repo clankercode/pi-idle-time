@@ -92,7 +92,7 @@ session; the enabled state persists per session in the state file.
 [goal reminder] HH:MM:SS
 <description>
 
-<system-reminder>Use idle_time_heartbeat_control with completeGoal=true to mark the goal complete.</system-reminder>
+<system-reminder>Use idle_time_heartbeat_control with completeGoal=true only when the underlying task is actually finished. Idle does not mean done, and receiving this reminder does not mean the goal is complete. If work is still in progress, leave the goal active and continue working or send a status update.</system-reminder>
 ```
 
 The user sees a compact TUI render (`🎯 idle goal · <preview> · <time> · <interval>`);
