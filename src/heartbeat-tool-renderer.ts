@@ -14,13 +14,22 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 const INDENT = " ";
 
 export interface HeartbeatCallArgs {
-  enabled: boolean;
+  enabled?: boolean;
   minutes?: number;
 }
 
 export interface HeartbeatResultDetails {
   enabled: boolean;
   intervalMinutes: number;
+  activeGoal?: string | null;
+  goalActionText?: string;
+}
+
+function getGoalPreview(goal: string | null | undefined, maxLen = 32): string {
+  if (!goal) return "";
+  const singleLine = goal.replace(/\s+/g, " ").trim();
+  if (singleLine.length <= maxLen) return singleLine;
+  return singleLine.slice(0, maxLen - 1) + "…";
 }
 
 /**
@@ -47,10 +56,26 @@ export function renderHeartbeatResult(
   theme: Theme,
 ): Component {
   const state = details.enabled ? "on" : "off";
-  return new Text(
-    INDENT +
-      theme.fg(details.enabled ? "success" : "muted", `♥ idle heartbeat ${state} · ${details.intervalMinutes}m`),
-    0,
-    0,
-  );
+  const goalAction = details.goalActionText?.trim() ?? "";
+  const goalPreview = goalAction ? "" : getGoalPreview(details.activeGoal);
+  const parts: string[] = [];
+
+  if (goalAction) {
+    parts.push(theme.fg("accent", `🎯 ${goalAction}`));
+    parts.push(theme.fg(details.enabled ? "success" : "muted", ` · heartbeat ${state}`));
+  } else {
+    parts.push(theme.fg(details.enabled ? "success" : "muted", `♥ idle heartbeat ${state}`));
+  }
+
+  parts.push(theme.fg("muted", ` · ${details.intervalMinutes}m`));
+
+  if (goalPreview) {
+    parts.push(theme.fg("text", ` · ${goalPreview}`));
+  }
+
+  if (details.activeGoal && details.enabled) {
+    parts.push(theme.fg("muted", " · keepalive paused"));
+  }
+
+  return new Text(INDENT + parts.join(""), 0, 0);
 }

@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import idleTimeExtension from "../src/index.js";
 import { loadSessionState } from "../src/state.js";
 import type {
@@ -200,10 +201,26 @@ describe("idleTimeExtension", () => {
     );
   });
 
+  it("registers the goal message renderer", () => {
+    const { pi, registeredMessageRenderers } = createMockPi();
+    idleTimeExtension(pi);
+    const customTypes = registeredMessageRenderers.map((r) => r.customType);
+    assert.ok(
+      customTypes.includes("idle-time-goal"),
+      `expected customTypes to include 'idle-time-goal', got ${JSON.stringify(customTypes)}`,
+    );
+  });
+
   it("registers the /idle-time-heartbeat command", () => {
     const { pi, commands } = createMockPi();
     idleTimeExtension(pi);
     assert.ok(commands.has("idle-time-heartbeat"), "expected /idle-time-heartbeat command");
+  });
+
+  it("registers the /idle-goal command", () => {
+    const { pi, commands } = createMockPi();
+    idleTimeExtension(pi);
+    assert.ok(commands.has("idle-goal"), "expected /idle-goal command");
   });
 
   it("heartbeat tool toggles enabled state and persists it", async () => {
@@ -224,7 +241,7 @@ describe("idleTimeExtension", () => {
     const result = await tool.execute("call-1", { enabled: true, minutes: 4.5 });
     assert.deepEqual(result, {
       content: [{ type: "text", text: "Idle heartbeat enabled for this session. Interval: 4.5 minutes." }],
-      details: { enabled: true, intervalMinutes: 4.5 },
+      details: { enabled: true, intervalMinutes: 4.5, activeGoal: null, goalActionText: "" },
     });
 
     const state = await loadSessionState({
@@ -398,6 +415,387 @@ describe("idleTimeExtension", () => {
         (m) => (m as { message: { customType: string } }).message.customType === "idle-time-heartbeat-notify",
       );
       assert.equal(heartbeatNotifs.length, 0, "expected no LLM-context message for toggle");
+
+      await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+    });
+  });
+
+  describe("/idle-goal command", () => {
+    function makeCtx(sessionId: string) {
+      const calls: { message: string; type?: string }[] = [];
+      const ctx = createMockCtx(sessionId, "model-1");
+      (ctx.ui as unknown as { notify: (m: string, t?: string) => void }).notify = (m, t) => {
+        calls.push({ message: m, type: t });
+      };
+      return { ctx, calls };
+    }
+
+    it("sets an idle goal and persists it", async () => {
+      const { pi, commands, emit } = createMockPi();
+      const sessionId = "session-goal-set";
+      const { ctx, calls } = makeCtx(sessionId);
+
+      idleTimeExtension(pi);
+      await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+      const cmd = commands.get("idle-goal");
+      assert.ok(cmd, "expected /idle-goal command");
+      await cmd.handler("refactor the auth module", ctx);
+
+      const state = await loadSessionState({
+        dataDir: path.join(tmpDir, ".pi", "idle-time"),
+        sessionId,
+      });
+      assert.equal(state.activeGoal, "refactor the auth module");
+      assert.ok(state.goalCreatedAt, "expected goalCreatedAt to be set");
+
+      assert.equal(calls.length, 1);
+      assert.match(calls[0].message, /Idle goal set/);
+      assert.match(calls[0].message, /refactor the auth module/);
+      assert.equal(calls[0].type, "info");
+
+      await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+    });
+
+    it("shows the active goal with no args", async () => {
+      const { pi, commands, emit } = createMockPi();
+      const sessionId = "session-goal-status";
+      const { ctx, calls } = makeCtx(sessionId);
+
+      idleTimeExtension(pi);
+      await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+      const cmd = commands.get("idle-goal");
+      assert.ok(cmd, "expected /idle-goal command");
+      await cmd.handler("refactor the auth module", ctx);
+      await cmd.handler("", ctx);
+
+      assert.equal(calls.length, 2);
+      assert.match(calls[1].message, /Idle goal active/);
+      assert.match(calls[1].message, /refactor the auth module/);
+
+      await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+    });
+
+    it("completes the active goal", async () => {
+      const { pi, commands, emit } = createMockPi();
+      const sessionId = "session-goal-complete";
+      const { ctx, calls } = makeCtx(sessionId);
+
+      idleTimeExtension(pi);
+      await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+      const cmd = commands.get("idle-goal");
+      assert.ok(cmd, "expected /idle-goal command");
+      await cmd.handler("refactor the auth module", ctx);
+      await cmd.handler("--complete", ctx);
+
+      const state = await loadSessionState({
+        dataDir: path.join(tmpDir, ".pi", "idle-time"),
+        sessionId,
+      });
+      assert.equal(state.activeGoal, null);
+      assert.equal(state.goalCreatedAt, null);
+
+      assert.equal(calls.length, 2);
+      assert.match(calls[1].message, /marked complete/);
+      assert.equal(calls[1].type, "info");
+
+      await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+    });
+
+    it("warns when completing with no active goal", async () => {
+      const { pi, commands, emit } = createMockPi();
+      const sessionId = "session-goal-none";
+      const { ctx, calls } = makeCtx(sessionId);
+
+      idleTimeExtension(pi);
+      await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+      const cmd = commands.get("idle-goal");
+      assert.ok(cmd, "expected /idle-goal command");
+      await cmd.handler("--complete", ctx);
+
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].type, "warning");
+
+      await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+    });
+  });
+
+  describe("idle_time_heartbeat_control goal params", () => {
+    function findTool(tools: unknown[]) {
+      return tools.find((t) => (t as { name: string }).name === "idle_time_heartbeat_control") as {
+        execute: (toolCallId: string, params: unknown) => Promise<unknown>;
+      };
+    }
+
+    it("sets a goal via the tool", async () => {
+      const { pi, tools, emit } = createMockPi();
+      const sessionId = "session-tool-goal";
+      const ctx = createMockCtx(sessionId, "model-1");
+
+      idleTimeExtension(pi);
+      await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+      const tool = findTool(tools);
+      assert.ok(tool, "expected heartbeat control tool");
+
+      const result = await tool.execute("call-1", { enabled: true, goal: "refactor the auth module" });
+      assert.deepEqual(result, {
+        content: [
+          {
+            type: "text",
+            text: "Idle heartbeat enabled for this session. Interval: 4.5 minutes. Goal set: refactor the auth module",
+          },
+        ],
+        details: {
+          enabled: true,
+          intervalMinutes: 4.5,
+          activeGoal: "refactor the auth module",
+          goalActionText: " Goal set: refactor the auth module",
+        },
+      });
+
+      const state = await loadSessionState({
+        dataDir: path.join(tmpDir, ".pi", "idle-time"),
+        sessionId,
+      });
+      assert.equal(state.activeGoal, "refactor the auth module");
+
+      await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+    });
+
+    it("completes a goal via the tool", async () => {
+      const { pi, tools, emit } = createMockPi();
+      const sessionId = "session-tool-complete";
+      const ctx = createMockCtx(sessionId, "model-1");
+
+      idleTimeExtension(pi);
+      await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+      const tool = findTool(tools);
+      await tool.execute("call-1", { enabled: true, goal: "refactor the auth module" });
+      const result = await tool.execute("call-2", { enabled: true, completeGoal: true });
+
+      assert.deepEqual(result, {
+        content: [
+          {
+            type: "text",
+            text: "Idle heartbeat enabled for this session. Interval: 4.5 minutes. Goal marked complete.",
+          },
+        ],
+        details: {
+          enabled: true,
+          intervalMinutes: 4.5,
+          activeGoal: null,
+          goalActionText: " Goal marked complete.",
+        },
+      });
+
+      const state = await loadSessionState({
+        dataDir: path.join(tmpDir, ".pi", "idle-time"),
+        sessionId,
+      });
+      assert.equal(state.activeGoal, null);
+      assert.equal(state.heartbeatEnabled, true);
+
+      await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+    });
+
+    it("completes a goal via the tool without requiring enabled", async () => {
+      const { pi, tools, emit } = createMockPi();
+      const sessionId = "session-tool-complete-no-enabled";
+      const ctx = createMockCtx(sessionId, "model-1");
+
+      idleTimeExtension(pi);
+      await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+      const tool = findTool(tools);
+      await tool.execute("call-1", { enabled: true, goal: "refactor the auth module" });
+      const result = await tool.execute("call-2", { completeGoal: true });
+
+      assert.deepEqual(result, {
+        content: [
+          {
+            type: "text",
+            text: "Idle goal marked complete.",
+          },
+        ],
+        details: {
+          enabled: true,
+          intervalMinutes: 4.5,
+          activeGoal: null,
+          goalActionText: " Goal marked complete.",
+        },
+      });
+
+      const state = await loadSessionState({
+        dataDir: path.join(tmpDir, ".pi", "idle-time"),
+        sessionId,
+      });
+      assert.equal(state.activeGoal, null);
+      assert.equal(state.heartbeatEnabled, true);
+
+      await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+    });
+
+    it("clears a goal via the tool and resumes keepalive if heartbeat is enabled", async () => {
+      const dataDir = path.join(tmpDir, ".pi", "idle-time");
+      fs.mkdirSync(dataDir, { recursive: true });
+      fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ idleHeartbeatMinutes: 0.001 }));
+
+      const { pi, sentMessages, tools, emit } = createMockPi();
+      const sessionId = "session-tool-clear-goal";
+      const ctx = createMockCtx(sessionId, "model-1");
+
+      idleTimeExtension(pi);
+      await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+      const tool = findTool(tools);
+      await tool.execute("call-1", { enabled: true, goal: "refactor the auth module", minutes: 0.001 });
+      const result = await tool.execute("call-2", { goal: "" });
+
+      assert.deepEqual(result, {
+        content: [
+          {
+            type: "text",
+            text: "Idle goal cleared.",
+          },
+        ],
+        details: {
+          enabled: true,
+          intervalMinutes: 0.001,
+          activeGoal: null,
+          goalActionText: " Goal cleared.",
+        },
+      });
+
+      await delay(120);
+
+      const goalMessages = sentMessages.filter(
+        (entry) => (entry as { message?: { customType?: string } }).message?.customType === "idle-time-goal",
+      );
+      const heartbeatMessages = sentMessages.filter(
+        (entry) => (entry as { message?: { customType?: string } }).message?.customType === "idle-time-heartbeat",
+      );
+
+      assert.equal(goalMessages.length, 0, `expected 0 goal reminders after clearing the goal, got ${goalMessages.length}`);
+      assert.equal(
+        heartbeatMessages.length,
+        1,
+        `expected 1 heartbeat keepalive after clearing the goal, got ${heartbeatMessages.length}`,
+      );
+
+      await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+    });
+
+    it("preserves an active goal across later agent_end writes", async () => {
+      const { pi, commands, emit } = createMockPi();
+      const sessionId = "session-goal-persist-after-stop";
+      const ctx = createMockCtx(sessionId, "model-1");
+
+      idleTimeExtension(pi);
+      await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+      const cmd = commands.get("idle-goal");
+      assert.ok(cmd, "expected /idle-goal command");
+      await cmd.handler("refactor the auth module", ctx);
+
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+      const state = await loadSessionState({
+        dataDir: path.join(tmpDir, ".pi", "idle-time"),
+        sessionId,
+      });
+      assert.equal(state.activeGoal, "refactor the auth module");
+      assert.ok(state.goalCreatedAt, "expected goalCreatedAt to survive later agent_end writes");
+
+      await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+    });
+
+    it("goal reminders take precedence over keepalive when both are active", async () => {
+      const dataDir = path.join(tmpDir, ".pi", "idle-time");
+      fs.mkdirSync(dataDir, { recursive: true });
+      fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ idleHeartbeatMinutes: 0.001 }));
+
+      const { pi, sentMessages, tools, emit } = createMockPi();
+      const sessionId = "session-goal-precedence";
+      const ctx = createMockCtx(sessionId, "model-1");
+
+      idleTimeExtension(pi);
+      await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+      const tool = findTool(tools);
+      await tool.execute("call-1", { enabled: true, goal: "refactor the auth module", minutes: 0.001 });
+
+      await delay(120);
+
+      const goalMessages = sentMessages.filter(
+        (entry) => (entry as { message?: { customType?: string } }).message?.customType === "idle-time-goal",
+      );
+      const heartbeatMessages = sentMessages.filter(
+        (entry) => (entry as { message?: { customType?: string } }).message?.customType === "idle-time-heartbeat",
+      );
+
+      assert.equal(goalMessages.length, 1, `expected 1 goal reminder, got ${goalMessages.length}`);
+      assert.equal(
+        heartbeatMessages.length,
+        0,
+        `expected 0 heartbeat keepalives while a goal is active, got ${heartbeatMessages.length}`,
+      );
+
+      await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+    });
+
+    it("does not fire a goal reminder until the active turn ends", async () => {
+      const dataDir = path.join(tmpDir, ".pi", "idle-time");
+      fs.mkdirSync(dataDir, { recursive: true });
+      fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ idleHeartbeatMinutes: 0.001 }));
+
+      const { pi, sentMessages, tools, emit } = createMockPi();
+      const sessionId = "session-goal-no-midturn-fire";
+      const ctx = createMockCtx(sessionId, "model-1");
+
+      idleTimeExtension(pi);
+      await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+      const inputEvent: InputEvent = {
+        type: "input",
+        text: "set a reminder while you work",
+        source: "interactive",
+      };
+      await emit<InputEvent>("input", inputEvent, ctx);
+      await emit("agent_start", { type: "agent_start" }, ctx);
+
+      const tool = findTool(tools);
+      await tool.execute("call-1", { enabled: true, goal: "refactor the auth module", minutes: 0.001 });
+
+      await delay(120);
+
+      const goalMessagesBeforeStop = sentMessages.filter(
+        (entry) => (entry as { message?: { customType?: string } }).message?.customType === "idle-time-goal",
+      );
+      assert.equal(goalMessagesBeforeStop.length, 0, "expected no goal reminder during the active turn");
+
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+      await delay(250);
+
+      const goalMessagesAfterStop = sentMessages.filter(
+        (entry) => (entry as { message?: { customType?: string } }).message?.customType === "idle-time-goal",
+      );
+      assert.equal(goalMessagesAfterStop.length, 1, "expected goal reminder after the turn ended");
 
       await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
     });

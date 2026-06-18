@@ -184,6 +184,66 @@ describe("state", () => {
     assert.equal(reloaded.modelAtLastStop, "opus-4-7");
   });
 
+  it("persists activeGoal and goalCreatedAt", async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "idle-timing-state-"));
+    const sessionId = "session-1";
+
+    await saveSessionState({
+      dataDir,
+      sessionId,
+      state: {
+        activeGoal: "refactor the auth module",
+        goalCreatedAt: "2026-04-13T05:00:00.000+10:00",
+      },
+    });
+
+    const reloaded = await loadSessionState({ dataDir, sessionId });
+    assert.equal(reloaded.activeGoal, "refactor the auth module");
+    assert.equal(reloaded.goalCreatedAt, "2026-04-13T05:00:00.000+10:00");
+  });
+
+  it("persists heartbeatIntervalMinutes and goalIntervalMinutes", async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "idle-timing-state-"));
+    const sessionId = "session-1";
+
+    await saveSessionState({
+      dataDir,
+      sessionId,
+      state: {
+        heartbeatIntervalMinutes: 2.5,
+        goalIntervalMinutes: 1.25,
+      },
+    });
+
+    const reloaded = await loadSessionState({ dataDir, sessionId });
+    assert.equal(reloaded.heartbeatIntervalMinutes, 2.5);
+    assert.equal(reloaded.goalIntervalMinutes, 1.25);
+  });
+
+  it("updateSessionState can clear activeGoal and goalCreatedAt", async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "idle-timing-state-"));
+    const sessionId = "session-1";
+
+    await saveSessionState({
+      dataDir,
+      sessionId,
+      state: {
+        activeGoal: "some goal",
+        goalCreatedAt: "2026-04-13T05:00:00.000+10:00",
+      },
+    });
+
+    await updateSessionState({
+      dataDir,
+      sessionId,
+      patch: { activeGoal: null, goalCreatedAt: null },
+    });
+
+    const reloaded = await loadSessionState({ dataDir, sessionId });
+    assert.equal(reloaded.activeGoal, null);
+    assert.equal(reloaded.goalCreatedAt, null);
+  });
+
   it("mutateSessionState runs the mutator inside the per-session lock", async () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "idle-timing-state-"));
     const sessionId = "session-1";

@@ -21,6 +21,10 @@ export const PERSISTED_FIELDS = new Set([
   "modelAtLastStop",
   "modelAtLastStopAt",
   "heartbeatEnabled",
+  "heartbeatIntervalMinutes",
+  "activeGoal",
+  "goalCreatedAt",
+  "goalIntervalMinutes",
 ]);
 
 export interface SessionState {
@@ -32,6 +36,10 @@ export interface SessionState {
   modelAtLastStop?: string | null;
   modelAtLastStopAt?: string | null;
   heartbeatEnabled?: boolean | null;
+  heartbeatIntervalMinutes?: number | null;
+  activeGoal?: string | null;
+  goalCreatedAt?: string | null;
+  goalIntervalMinutes?: number | null;
 }
 
 const sessionLocks = new Map<string, Promise<unknown>>();

@@ -73,6 +73,57 @@ describe("heartbeat-tool-renderer", () => {
       assert.equal(lines.length, 1);
       assert.match(lines[0], /off/);
     });
+
+    it("shows goal actions instead of hiding them behind heartbeat state", () => {
+      const component = renderHeartbeatResult(
+        {
+          enabled: false,
+          intervalMinutes: 4.5,
+          activeGoal: "refactor the auth module",
+          goalActionText: " Goal set: refactor the auth module",
+        } as HeartbeatResultDetails,
+        false,
+        false,
+        plainTheme,
+      );
+      const line = joinLines(component);
+      assert.match(line, /Goal set: refactor the auth module/);
+      assert.match(line, /heartbeat off/);
+    });
+
+    it("shows when keepalive is paused by an active goal", () => {
+      const component = renderHeartbeatResult(
+        {
+          enabled: true,
+          intervalMinutes: 4.5,
+          activeGoal: "refactor the auth module",
+        } as HeartbeatResultDetails,
+        false,
+        false,
+        plainTheme,
+      );
+      const line = joinLines(component);
+      assert.match(line, /idle heartbeat on/);
+      assert.match(line, /refactor the auth module/);
+      assert.match(line, /keepalive paused/);
+    });
+
+    it("shows completion actions while reflecting resumed heartbeat state", () => {
+      const component = renderHeartbeatResult(
+        {
+          enabled: true,
+          intervalMinutes: 4.5,
+          activeGoal: null,
+          goalActionText: " Goal marked complete.",
+        } as HeartbeatResultDetails,
+        false,
+        false,
+        plainTheme,
+      );
+      const line = joinLines(component);
+      assert.match(line, /Goal marked complete\./);
+      assert.match(line, /heartbeat on/);
+    });
   });
 
   describe("combined call + result", () => {

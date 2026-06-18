@@ -21,6 +21,8 @@ src/
   heartbeat.ts                   — Idle heartbeat timer for cache keepalive
   heartbeat-tool-renderer.ts     — Compact renderer for the heartbeat control tool
   heartbeat-message-renderer.ts  — Compact renderer for [cache keepalive] deliverable
+  goal.ts                        — Idle goal reminder message formatting
+  goal-message-renderer.ts       — Compact renderer for [goal reminder] deliverable
   time.ts                        — ISO timestamp utilities
   duration.ts                    — Elapsed time formatting for statusline
   format.ts                      — Timing block and idle system message formatting
@@ -55,13 +57,19 @@ Stored in `${dataDir}/config.json` with these keys:
 Per-session state is stored in `${dataDir}/sessions/<sessionId>.json`. The state
 module provides atomic file writes with temp-file rename and stale tmp sweep.
 Since pi extensions run in a single process, the in-process mutex serializes
-concurrent operations without needing cross-process file locks.
+concurrent operations without needing cross-process file locks. Persisted state
+includes the active idle goal, goal-created timestamp, and any per-session
+heartbeat/goal interval overrides.
 
 ### Commands
 
 - `/idle-time-reset` — Clear state for current session (or all with `--all --yes`)
 - `/idle-time-status` — Self-test: check data dir, state, config
 - `/idle-time-config` — Show current configuration
+- `/idle-time-heartbeat` — Toggle the cache keepalive heartbeat
+- `/idle-goal <description>` — Set an idle goal reminder
+- `/idle-goal` / `/idle-goal --status` — Show the active goal
+- `/idle-goal --complete` — Mark the active goal complete
 
 ### Cache Keepalive Heartbeat
 
@@ -74,6 +82,29 @@ triggers a real assistant turn, refreshing the Anthropic prompt cache.
 The heartbeat is **opt-in and disabled by default** because each firing consumes
 tokens and produces a visible chat message. The agent can toggle it during a
 session; the enabled state persists per session in the state file.
+
+### Idle Goal Reminders
+
+`/idle-goal <description>` sets a per-session idle goal. After the configured
+`idleHeartbeatMinutes` of inactivity, a reminder message is sent to the LLM:
+
+```text
+[goal reminder] HH:MM:SS
+<description>
+
+<system-reminder>Use idle_time_heartbeat_control with completeGoal=true to mark the goal complete.</system-reminder>
+```
+
+The user sees a compact TUI render (`🎯 idle goal · <preview> · <time> · <interval>`);
+the LLM sees the full block above. Goal reminders take precedence over the
+keepalive heartbeat while a goal is active. The agent can set or complete goals
+via the `goal` and `completeGoal` parameters on `idle_time_heartbeat_control`.
+The active goal persists per session in the state file.
+
+A `minutes` override provided when setting a goal is remembered for that goal,
+and a `minutes` override provided when enabling the heartbeat is remembered for
+the heartbeat. `enabled` is now optional when the tool call only changes the
+goal, and goal reminders run regardless of `enabled` while a goal is active.
 
 ## Development
 
