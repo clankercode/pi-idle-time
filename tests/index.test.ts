@@ -12,7 +12,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import idleTimeExtension from "../src/index.js";
-import { loadSessionState } from "../src/state.js";
+import { loadSessionState, saveSessionState } from "../src/state.js";
+import { loadGlobalState } from "../src/global-state.js";
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -221,6 +222,105 @@ describe("idleTimeExtension", () => {
     const { pi, commands } = createMockPi();
     idleTimeExtension(pi);
     assert.ok(commands.has("idle-goal"), "expected /idle-goal command");
+  });
+
+  it("/idle-time-status formats long last turn durations as elapsed time", async () => {
+    const dataDir = path.join(tmpDir, ".pi", "idle-time");
+    const { pi, commands, emit } = createMockPi();
+    const sessionId = "session-status-duration";
+    const ctx = createMockCtx(sessionId, "model-1");
+    const notifications: string[] = [];
+    (ctx.ui as unknown as { notify: (message: string, type?: string) => void }).notify = (message) => {
+      notifications.push(message);
+    };
+
+    await saveSessionState({
+      dataDir,
+      sessionId,
+      state: {
+        sessionId,
+        lastStopAt: "2026-06-18T21:52:31.274+10:00",
+        lastAssistantMessageAt: "2026-06-18T21:52:31.274+10:00",
+        lastTurnExecMs: 2_220_000,
+      },
+    });
+
+    idleTimeExtension(pi);
+    await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+
+    const command = commands.get("idle-time-status");
+    assert.ok(command, "expected /idle-time-status command");
+    await command.handler("", ctx);
+
+    assert.equal(notifications.length, 1);
+    assert.match(notifications[0], /- Last turn duration: 37m/);
+    assert.doesNotMatch(notifications[0], /2220\.0s/);
+
+    await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+  });
+
+  it("/idle-time-reset clears globally persisted heartbeat state", async () => {
+    const dataDir = path.join(tmpDir, ".pi", "idle-time");
+    const { pi, commands, emit } = createMockPi();
+    const sessionId = "session-reset-global-heartbeat";
+    const ctx = createMockCtx(sessionId, "model-1");
+
+    idleTimeExtension(pi);
+    try {
+      await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+      const heartbeatCommand = commands.get("idle-time-heartbeat");
+      assert.ok(heartbeatCommand, "expected /idle-time-heartbeat command");
+      await heartbeatCommand.handler("on", ctx);
+      assert.equal((await loadGlobalState(dataDir)).heartbeatEnabled, true);
+
+      const resetCommand = commands.get("idle-time-reset");
+      assert.ok(resetCommand, "expected /idle-time-reset command");
+      await resetCommand.handler("", ctx);
+
+      assert.equal((await loadGlobalState(dataDir)).heartbeatEnabled, false);
+    } finally {
+      await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+    }
+  });
+
+  it("loads persisted lastUserPromptAt so reloads do not look like first prompts", async () => {
+    const dataDir = path.join(tmpDir, ".pi", "idle-time");
+    const { pi, sentMessages, emit } = createMockPi();
+    const sessionId = "session-reload-not-first-prompt";
+    const ctx = createMockCtx(sessionId, "model-1");
+
+    await saveSessionState({
+      dataDir,
+      sessionId,
+      state: {
+        sessionId,
+        lastUserPromptAt: "2026-06-18T21:50:00.000+10:00",
+        lastStopAt: "2026-06-18T21:52:31.274+10:00",
+        lastAssistantMessageAt: "2026-06-18T21:52:31.274+10:00",
+      },
+    });
+
+    idleTimeExtension(pi);
+    try {
+      await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+
+      const inputEvent: InputEvent = {
+        type: "input",
+        text: "hello after reload",
+        source: "interactive",
+      };
+      await emit<InputEvent>("input", inputEvent, ctx);
+
+      const sent = sentMessages.find(
+        (entry) => (entry as { message?: { customType?: string } }).message?.customType === "idle-time",
+      ) as { message?: { content?: string } } | undefined;
+      assert.ok(sent?.message?.content, "expected an injected timing block");
+      assert.doesNotMatch(sent.message.content, /local_time=/);
+    } finally {
+      await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+    }
   });
 
   it("heartbeat tool toggles enabled state and persists it", async () => {

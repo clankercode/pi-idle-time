@@ -395,6 +395,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
     // Load persisted state for cross-session continuity
     try {
       const persisted = await loadSessionState({ dataDir: getDataDir(), sessionId });
+      lastUserPromptAt = persisted.lastUserPromptAt ?? null;
       lastStopAt = persisted.lastStopAt ?? null;
       lastAssistantMessageAt = persisted.lastAssistantMessageAt ?? null;
       lastTurnExecMs = persisted.lastTurnExecMs ?? null;
@@ -662,6 +663,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
           goalIntervalMinutes = null;
 
           stopAllIdleTimers();
+          await saveGlobalState(getDataDir(), { heartbeatEnabled });
 
           if (setStatusRef) {
             setStatusRef(STATUSLINE_KEY, undefined);
@@ -712,6 +714,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
         goalIntervalMinutes = null;
 
         stopAllIdleTimers();
+        await saveGlobalState(getDataDir(), { heartbeatEnabled });
 
         if (setStatusRef) {
           setStatusRef(STATUSLINE_KEY, undefined);
@@ -733,6 +736,9 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       const formatted = elapsedMs != null
         ? formatElapsed(elapsedMs, { dropSecondsAfterSeconds: config.dropSecondsAfterSeconds })
         : null;
+      const lastTurnDuration = lastTurnExecMs != null
+        ? formatElapsed(lastTurnExecMs, { dropSecondsAfterSeconds: config.dropSecondsAfterSeconds })
+        : null;
 
       const lines = [
         "**idle-time status**",
@@ -741,7 +747,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
         `- Data dir: \`${dataDir}\``,
         `- Last stop: ${lastStopAt ?? "(never)"}`,
         `- Last assistant: ${lastAssistantMessageAt ?? "(never)"}`,
-        `- Last turn duration: ${lastTurnExecMs != null ? `${(lastTurnExecMs / 1000).toFixed(1)}s` : "(unknown)"}`,
+        `- Last turn duration: ${lastTurnDuration ?? "(unknown)"}`,
         `- Current idle: ${formatted ?? "(no data)"}`,
         `- Active goal: ${activeGoal ?? "(none)"}`,
         `- Goal interval: ${goalIntervalMinutes ?? "(config/default)"}`,
