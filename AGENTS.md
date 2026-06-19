@@ -81,7 +81,8 @@ triggers a real assistant turn, refreshing the Anthropic prompt cache.
 
 The heartbeat is **opt-in and disabled by default** because each firing consumes
 tokens and produces a visible chat message. The agent can toggle it during a
-session; the enabled state persists per session in the state file.
+session with `genericHeartbeatEnabled`; the enabled state persists globally
+across `/reload`.
 
 ### Idle Goal Reminders
 
@@ -103,8 +104,10 @@ The active goal persists per session in the state file.
 
 A `minutes` override provided when setting a goal is remembered for that goal,
 and a `minutes` override provided when enabling the heartbeat is remembered for
-the heartbeat. `enabled` is now optional when the tool call only changes the
-goal, and goal reminders run regardless of `enabled` while a goal is active.
+the heartbeat. `genericHeartbeatEnabled` controls the generic heartbeat
+independently from `goal`/`completeGoal`; the legacy `enabled` field is only a
+heartbeat toggle when no goal action is present. Goal reminders run regardless
+of the generic heartbeat enabled state while a goal is active.
 
 ## Development
 

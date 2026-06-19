@@ -14,7 +14,9 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 const INDENT = " ";
 
 export interface HeartbeatCallArgs {
+  /** @deprecated Use genericHeartbeatEnabled. */
   enabled?: boolean;
+  genericHeartbeatEnabled?: boolean;
   minutes?: number;
 }
 

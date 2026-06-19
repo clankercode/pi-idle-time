@@ -645,17 +645,18 @@ describe("idleTimeExtension", () => {
 
       const tool = findTool(tools);
       assert.ok(tool, "expected heartbeat control tool");
+      await tool.execute("call-0", { enabled: false });
 
-      const result = await tool.execute("call-1", { enabled: true, goal: "refactor the auth module" });
+      const result = await tool.execute("call-1", { goal: "refactor the auth module" });
       assert.deepEqual(result, {
         content: [
           {
             type: "text",
-            text: "Idle heartbeat enabled for this session. Interval: 4.5 minutes. Goal set: refactor the auth module",
+            text: "Idle goal set: refactor the auth module",
           },
         ],
         details: {
-          enabled: true,
+          enabled: false,
           intervalMinutes: 4.5,
           activeGoal: "refactor the auth module",
           goalActionText: " Goal set: refactor the auth module",
@@ -667,6 +668,46 @@ describe("idleTimeExtension", () => {
         sessionId,
       });
       assert.equal(state.activeGoal, "refactor the auth module");
+      assert.equal(state.heartbeatEnabled ?? false, false);
+
+      await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+    });
+
+    it("does not treat legacy enabled as a generic heartbeat toggle when setting a goal", async () => {
+      const { pi, tools, emit } = createMockPi();
+      const sessionId = "session-tool-goal-legacy-enabled";
+      const ctx = createMockCtx(sessionId, "model-1");
+
+      idleTimeExtension(pi);
+      await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+      const tool = findTool(tools);
+      await tool.execute("call-0", { enabled: false });
+      await tool.execute("call-1", { enabled: true, goal: "refactor the auth module" });
+      const result = await tool.execute("call-2", { completeGoal: true });
+
+      assert.deepEqual(result, {
+        content: [
+          {
+            type: "text",
+            text: "Idle goal marked complete.",
+          },
+        ],
+        details: {
+          enabled: false,
+          intervalMinutes: 4.5,
+          activeGoal: null,
+          goalActionText: " Goal marked complete.",
+        },
+      });
+
+      const state = await loadSessionState({
+        dataDir: path.join(tmpDir, ".pi", "idle-time"),
+        sessionId,
+      });
+      assert.equal(state.activeGoal, null);
+      assert.equal(state.heartbeatEnabled ?? false, false);
 
       await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
     });
@@ -681,8 +722,8 @@ describe("idleTimeExtension", () => {
       await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
 
       const tool = findTool(tools);
-      await tool.execute("call-1", { enabled: true, goal: "refactor the auth module" });
-      const result = await tool.execute("call-2", { enabled: true, completeGoal: true });
+      await tool.execute("call-1", { genericHeartbeatEnabled: true, goal: "refactor the auth module" });
+      const result = await tool.execute("call-2", { genericHeartbeatEnabled: true, completeGoal: true });
 
       assert.deepEqual(result, {
         content: [
@@ -719,7 +760,7 @@ describe("idleTimeExtension", () => {
       await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
 
       const tool = findTool(tools);
-      await tool.execute("call-1", { enabled: true, goal: "refactor the auth module" });
+      await tool.execute("call-1", { genericHeartbeatEnabled: true, goal: "refactor the auth module" });
       const result = await tool.execute("call-2", { completeGoal: true });
 
       assert.deepEqual(result, {
@@ -761,7 +802,7 @@ describe("idleTimeExtension", () => {
       await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
 
       const tool = findTool(tools);
-      await tool.execute("call-1", { enabled: true, goal: "refactor the auth module", minutes: 0.001 });
+      await tool.execute("call-1", { genericHeartbeatEnabled: true, goal: "refactor the auth module", minutes: 0.001 });
       const result = await tool.execute("call-2", { goal: "" });
 
       assert.deepEqual(result, {
@@ -837,7 +878,7 @@ describe("idleTimeExtension", () => {
       await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
 
       const tool = findTool(tools);
-      await tool.execute("call-1", { enabled: true, goal: "refactor the auth module", minutes: 0.001 });
+      await tool.execute("call-1", { genericHeartbeatEnabled: true, goal: "refactor the auth module", minutes: 0.001 });
 
       await delay(120);
 
@@ -880,7 +921,7 @@ describe("idleTimeExtension", () => {
       await emit("agent_start", { type: "agent_start" }, ctx);
 
       const tool = findTool(tools);
-      await tool.execute("call-1", { enabled: true, goal: "refactor the auth module", minutes: 0.001 });
+      await tool.execute("call-1", { goal: "refactor the auth module", minutes: 0.001 });
 
       await delay(120);
 

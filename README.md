@@ -104,23 +104,30 @@ LLM-callable tool that controls the idle heartbeat and idle goal for
 the current session.
 
 ```ts
-idle_time_heartbeat_control(enabled: true, minutes: 4.5)
-idle_time_heartbeat_control(enabled: false)
+idle_time_heartbeat_control(genericHeartbeatEnabled: true, minutes: 4.5)
+idle_time_heartbeat_control(genericHeartbeatEnabled: false)
 idle_time_heartbeat_control(goal: "draft release notes for v0.4.1")
 idle_time_heartbeat_control(completeGoal: true)
 ```
 
-- `enabled` (boolean, optional) — whether the heartbeat should be active.
+- `genericHeartbeatEnabled` (boolean, optional) — whether the generic
+  cache-keepalive heartbeat should be active independently of goals.
   Omit when only changing the goal.
+- `enabled` (boolean, optional, deprecated) — legacy alias for
+  `genericHeartbeatEnabled`. For backward compatibility it is only
+  treated as a heartbeat toggle when no `goal` or `completeGoal` action
+  is provided.
 - `minutes` (number, optional) — override the interval. Must be positive.
   Falls back to `config.idleHeartbeatMinutes`, then 4.5. Remembered per
   session per mode (heartbeat vs. goal).
 - `goal` (string, optional) — set the idle goal description. Pass an
-  empty string to clear without completing.
-- `completeGoal` (boolean, optional) — mark the active goal complete and
-  resume the heartbeat if enabled. Ignored when `goal` is also set.
+  empty string to clear without completing. Setting a goal does not
+  enable the generic heartbeat.
+- `completeGoal` (boolean, optional) — mark the active goal complete.
+  This resumes the generic heartbeat only if it was independently
+  enabled. Ignored when `goal` is also set.
 
-The enabled state persists across `/reload` via
+The generic heartbeat enabled state persists across `/reload` via
 `~/.pi/idle-time/global.json`. The active goal persists per session in
 `~/.pi/idle-time/sessions/<id>.json`. Users can also toggle directly
 with the `/idle-time-heartbeat` and `/idle-goal` slash commands (see
@@ -141,7 +148,7 @@ interval of inactivity the extension sends the LLM:
 The user sees a compact TUI render
 (`🎯 idle goal · <preview> · <time> · <interval>`). Goal reminders take
 precedence over the keepalive heartbeat while a goal is active, and
-fire regardless of the heartbeat's `enabled` flag.
+fire regardless of the generic heartbeat enabled state.
 
 ## Statusline
 

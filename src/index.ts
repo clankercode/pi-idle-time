@@ -874,12 +874,18 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
     name: "idle_time_heartbeat_control",
     label: "Idle Heartbeat Control",
     description:
-      "Enable or disable the idle cache-keepalive heartbeat for this session, and optionally set or complete an idle goal reminder. When enabled and the user is idle for the configured number of minutes, a short keepalive or goal-reminder message is sent. This triggers a real LLM response and consumes tokens.",
+      "Control the generic idle cache-keepalive heartbeat and optionally set or complete an idle goal reminder. Goal reminders are independent from the generic heartbeat: setting or completing a goal does not enable the generic heartbeat unless genericHeartbeatEnabled is provided. When either reminder type fires, it sends a visible message that triggers a real LLM response and consumes tokens.",
     parameters: Type.Object({
+      genericHeartbeatEnabled: Type.Optional(
+        Type.Boolean({
+          description:
+            "Whether the generic cache-keepalive heartbeat should be active independently of idle goals. Omit this when only setting, clearing, or completing an idle goal.",
+        }),
+      ),
       enabled: Type.Optional(
         Type.Boolean({
           description:
-            "Whether the idle heartbeat should be active for this session. Optional when only setting, clearing, or completing an idle goal.",
+            "Deprecated alias for genericHeartbeatEnabled. For backward compatibility this is only treated as a generic heartbeat toggle when no goal or completeGoal action is provided.",
         }),
       ),
       minutes: Type.Optional(
@@ -898,7 +904,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       completeGoal: Type.Optional(
         Type.Boolean({
           description:
-            "Mark the current idle goal as complete. This clears the goal and resumes the keepalive heartbeat if enabled. Ignored if goal is also provided (the new goal takes precedence).",
+            "Mark the current idle goal as complete. This clears the goal and resumes the generic heartbeat only if genericHeartbeatEnabled was already enabled independently. Ignored if goal is also provided (the new goal takes precedence).",
         }),
       ),
     }),
@@ -932,8 +938,15 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
         }
       }
 
-      if (typeof params.enabled === "boolean") {
-        intervalMinutes = await setHeartbeatEnabled(params.enabled, params.minutes);
+      const hasGoalAction = typeof params.goal === "string" || Boolean(params.completeGoal);
+      const genericHeartbeatEnabled = typeof params.genericHeartbeatEnabled === "boolean"
+        ? params.genericHeartbeatEnabled
+        : !hasGoalAction && typeof params.enabled === "boolean"
+          ? params.enabled
+          : undefined;
+
+      if (typeof genericHeartbeatEnabled === "boolean") {
+        intervalMinutes = await setHeartbeatEnabled(genericHeartbeatEnabled, params.minutes);
       }
 
       intervalMinutes = activeGoal
@@ -941,7 +954,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
         : getCurrentHeartbeatIntervalMinutes();
 
       const goalSummary = goalActionText.trimStart();
-      const summaryText = typeof params.enabled === "boolean"
+      const summaryText = typeof genericHeartbeatEnabled === "boolean"
         ? `Idle heartbeat ${heartbeatEnabled ? "enabled" : "disabled"} for this session.${
             heartbeatEnabled ? ` Interval: ${intervalMinutes} minutes.` : ""
           }${goalActionText}`
