@@ -28,9 +28,9 @@ keepalive message to refresh the Anthropic prompt cache.
 ## Installation
 
 ```bash
-pi install /path/to/pi-idle-time
-# or from npm (when published):
-# pi install npm:pi-idle-time
+pi install npm:pi-idle-time
+# or from a local checkout:
+# pi install /path/to/pi-idle-time
 ```
 
 ## What the model sees
@@ -60,7 +60,7 @@ When the user has been idle for more than `idleMessageThresholdSeconds`
 (default 10s), a **visible** system message appears in the TUI:
 
 ```
-[after 5m 2s]
+[sent after 5m 2s]
 ```
 
 ## Commands
@@ -227,7 +227,9 @@ Create `~/.pi/idle-time/config.json` to override defaults:
 
 ## Data directory
 
-State is stored in `~/.pi/idle-time/`:
+State is stored in `~/.pi/idle-time/`. Corrupt state files (malformed
+JSON) are automatically renamed to `<filename>.corrupt-<timestamp>` and
+the extension falls back to defaults — no data is silently lost.
 
 ```
 ~/.pi/idle-time/
@@ -283,6 +285,18 @@ survives `/reload` — it is not tied to any session.
   user-role message but does not appear in the TUI transcript. The
   `agent_end` event also fires a `display: false` `idle-time` message
   with the same content if needed.
+- **Compaction resumes timers.** When context compaction fires
+  (`session_before_compact`), the extension updates `lastStopAt` and
+  `lastAssistantMessageAt` to now, clears model tracking, and restarts
+  both the goal timer and the heartbeat timer. If a goal or heartbeat
+  was active before compaction, it resumes with the compaction timestamp
+  as the new idle baseline.
+- **Per-session interval overrides persist.** When the LLM sets a goal
+  with a `minutes` parameter, that interval is saved in the session state
+  file and restored on the next `session_start`.
+- **Config is cached per session.** The config module caches the loaded
+  `config.json` per `dataDir`. Edits to `config.json` take effect on the
+  next session, not immediately in the current one.
 
 ## Development
 

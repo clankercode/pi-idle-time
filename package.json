@@ -1,6 +1,6 @@
 {
   "name": "pi-idle-time",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Idle time display + injection, goal setting and reminders, and idle heartbeats. Statusline integration.",
   "type": "module",
   "private": false,
