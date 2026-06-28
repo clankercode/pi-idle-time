@@ -43,7 +43,7 @@ jobs:
           echo "Releasing $pkg"
 
       - name: Publish to npm
-        run: pnpm publish --no-git-checks
+        run: pnpm publish --no-git-checks --ignore-scripts
 
       - name: Create GitHub Release
         env:
