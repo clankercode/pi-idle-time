@@ -1,7 +1,7 @@
 {
   "name": "pi-idle-time",
   "version": "0.4.1",
-  "description": "Pi extension that injects per-message timing context (idle time, turn duration, local time) and integrates with the statusline.",
+  "description": "Idle time display + injection, goal setting and reminders, and idle heartbeats. Statusline integration.",
   "type": "module",
   "private": false,
   "keywords": [
