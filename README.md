@@ -127,6 +127,10 @@ idle_time_heartbeat_control(completeGoal: true)
   This resumes the generic heartbeat only if it was independently
   enabled. Ignored when `goal` is also set.
 
+Calling the tool with no parameters is a read-only query that returns
+the current active goal, heartbeat enabled state, and effective
+interval for each — see [Querying current state](#querying-current-state).
+
 The generic heartbeat enabled state persists across `/reload` via
 `~/.pi/idle-time/global.json`. The active goal persists per session in
 `~/.pi/idle-time/sessions/<id>.json`. Users can also toggle directly
@@ -267,6 +271,52 @@ survives `/reload` — it is not tied to any session.
   "modelAtLastStopAt": "2026-06-17T08:09:43.000+10:00"
 }
 ```
+
+## Agent-visible state events
+
+Every manual change to idle-goal or heartbeat state emits a structured
+event to the agent, delivered as a hidden user-role message with
+`customType: "idle-time-state"` and `display: true`, with the same
+`triggerTurn` + `deliverAs: "followUp"` delivery used for heartbeat
+keepalives and goal reminders. The body is a small key=value block:
+
+```
+[idle-time status]
+change=goal-set
+heartbeat_enabled=true
+heartbeat_interval_minutes=4.5
+active_goal=refactor the auth module
+goal_interval_minutes=4.5
+```
+
+`change` is one of: `heartbeat-enabled`, `heartbeat-disabled`,
+`goal-set`, `goal-cleared`, `goal-complete`, `reset-session`,
+`reset-all`. The renderer collapses the block to a one-liner in the
+transcript:
+
+```
+idle-time · goal-set · hb=true · goal=refactor the auth module
+```
+
+So the agent always knows when the user manually toggles state, even
+outside a tool call.
+
+## Querying current state
+
+Calling `idle_time_heartbeat_control({})` with no parameters is a
+read-only status query. It returns the same structured block:
+
+```
+[idle-time status]
+heartbeat_enabled=true
+heartbeat_interval_minutes=4.5
+active_goal=refactor the auth module
+goal_interval_minutes=4.5
+```
+
+The query is non-mutating: it does not change any timer, persist any
+state, or send a hidden message. Use it any time the agent needs to
+verify the current idle-time configuration.
 
 ## Behavior notes
 

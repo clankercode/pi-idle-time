@@ -32,6 +32,12 @@ import {
   type HeartbeatMessageDetails,
 } from "./heartbeat-message-renderer.js";
 import { registerGoalMessageRenderer, CUSTOM_TYPE as GOAL_CUSTOM_TYPE } from "./goal-message-renderer.js";
+import {
+  registerIdleTimeStateRenderer,
+  sendIdleTimeStateEvent,
+  type IdleTimeStateEvent,
+  type IdleTimeStateFields,
+} from "./idle-time-state.js";
 import { formatGoalMessage, type GoalMessageDetails } from "./goal.js";
 import { HeartbeatTimer } from "./heartbeat.js";
 import * as path from "node:path";
@@ -50,6 +56,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
   // Register the compact message renderers for heartbeat and goal messages
   registerHeartbeatMessageRenderer(pi);
   registerGoalMessageRenderer(pi);
+  registerIdleTimeStateRenderer(pi);
 
   const dataDir = resolveDataDir();
   let sessionId: string | null = null;
@@ -239,7 +246,12 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
    * Set or replace the active idle goal for this session.
    * Persists to session state and arms the goal reminder timer.
    */
-  async function setActiveGoal(goal: string | null, intervalOverride?: number): Promise<void> {
+  async function setActiveGoal(goal: string | null, intervalOverride?: number): Promise<{ change: IdleTimeStateEvent["change"] } | null> {
+    const previousGoal = activeGoal;
+    const previousInterval = goalIntervalMinutes;
+    const isNoOp =
+      previousGoal === goal &&
+      (goal === null || (intervalOverride === undefined && previousInterval !== null));
     activeGoal = goal;
     goalCreatedAt = goal ? getNowIso() : null;
     goalIntervalMinutes = goal ? resolveIntervalMinutes(intervalOverride, goalIntervalMinutes) : null;
@@ -256,18 +268,31 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       // Goal reminders take precedence; stop keepalive while a goal is active.
       stopHeartbeat();
       maybeStartGoalTimer(intervalOverride);
-      return;
+    } else {
+      stopGoalTimer();
+      maybeStartHeartbeat();
     }
 
-    stopGoalTimer();
-    maybeStartHeartbeat();
+    if (isNoOp) {
+      return null;
+    }
+
+    const change: IdleTimeStateEvent["change"] = goal
+      ? "goal-set"
+      : "goal-cleared";
+    sendIdleTimeStateEvent(pi, {
+      change,
+      fields: snapshotStateFields() as IdleTimeStateFields,
+    });
+    return { change };
   }
 
   /**
    * Mark the current goal as complete. Clears activeGoal and resumes the
    * keepalive heartbeat if it is enabled.
    */
-  async function completeGoal(): Promise<void> {
+  async function completeGoal(): Promise<{ sent: boolean }> {
+    if (!activeGoal) return { sent: false };
     activeGoal = null;
     goalCreatedAt = null;
     goalIntervalMinutes = null;
@@ -282,6 +307,25 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
 
     stopGoalTimer();
     maybeStartHeartbeat();
+    const sent = sendIdleTimeStateEvent(pi, {
+      change: "goal-complete",
+      fields: snapshotStateFields(),
+    });
+    return { sent };
+  }
+
+  function snapshotStateFields(): {
+    heartbeat_enabled: boolean;
+    heartbeat_interval_minutes: number;
+    active_goal: string | null;
+    goal_interval_minutes: number | null;
+  } {
+    return {
+      heartbeat_enabled: heartbeatEnabled,
+      heartbeat_interval_minutes: getCurrentHeartbeatIntervalMinutes(),
+      active_goal: activeGoal,
+      goal_interval_minutes: activeGoal ? getCurrentGoalIntervalMinutes() : null,
+    };
   }
 
   /**
@@ -300,6 +344,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
    * active timer is the goal reminder.
    */
   function setHeartbeatEnabled(enabled: boolean, minutesOverride?: number): Promise<number> {
+    const previousEnabled = heartbeatEnabled;
     heartbeatEnabled = enabled;
     heartbeatIntervalMinutes = enabled
       ? resolveIntervalMinutes(minutesOverride, heartbeatIntervalMinutes)
@@ -329,6 +374,13 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       maybeStartHeartbeat(intervalMinutes);
     } else {
       stopHeartbeat();
+    }
+
+    if (previousEnabled !== enabled) {
+      sendIdleTimeStateEvent(pi, {
+        change: enabled ? "heartbeat-enabled" : "heartbeat-disabled",
+        fields: snapshotStateFields(),
+      });
     }
 
     return sessionWrite.then(() => intervalMinutes);
@@ -669,6 +721,15 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
             setStatusRef(STATUSLINE_KEY, undefined);
           }
 
+          sendIdleTimeStateEvent(pi, {
+            change: "reset-all",
+            fields: {
+              heartbeat_enabled: false,
+              heartbeat_interval_minutes: null,
+              active_goal: null,
+              goal_interval_minutes: null,
+            },
+          });
           ctx.ui.notify(`Reset all sessions (${removed} files)`, "info");
         } catch (error) {
           logError({ dataDir, sessionId, hook: "idle-time-reset", error });
@@ -720,6 +781,15 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
           setStatusRef(STATUSLINE_KEY, undefined);
         }
 
+        sendIdleTimeStateEvent(pi, {
+          change: "reset-session",
+          fields: {
+            heartbeat_enabled: false,
+            heartbeat_interval_minutes: null,
+            active_goal: null,
+            goal_interval_minutes: null,
+          },
+        });
         ctx.ui.notify(`Idle-time state reset for session ${sessionId}`, "info");
       } catch (error) {
         logError({ dataDir, sessionId, hook: "idle-time-reset", error });
@@ -921,6 +991,13 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       let goalActionText = "";
       let intervalMinutes = getCurrentHeartbeatIntervalMinutes();
 
+      const wantsQuery =
+        params.genericHeartbeatEnabled === undefined &&
+        params.enabled === undefined &&
+        params.minutes === undefined &&
+        params.goal === undefined &&
+        params.completeGoal === undefined;
+
       if (typeof params.goal === "string") {
         if (params.goal.trim().length === 0) {
           await setActiveGoal(null);
@@ -952,6 +1029,26 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       intervalMinutes = activeGoal
         ? getCurrentGoalIntervalMinutes()
         : getCurrentHeartbeatIntervalMinutes();
+
+      if (wantsQuery) {
+        const fields = snapshotStateFields();
+        const summaryText = [
+          "[idle-time status]",
+          `heartbeat_enabled=${fields.heartbeat_enabled}`,
+          `heartbeat_interval_minutes=${fields.heartbeat_interval_minutes ?? "(config/default)"}`,
+          `active_goal=${fields.active_goal ?? "(none)"}`,
+          `goal_interval_minutes=${fields.goal_interval_minutes ?? "(config/default)"}`,
+        ].join("\n");
+        return {
+          content: [{ type: "text", text: summaryText }],
+          details: {
+            enabled: heartbeatEnabled,
+            intervalMinutes,
+            activeGoal,
+            goalActionText: "",
+          },
+        };
+      }
 
       const goalSummary = goalActionText.trimStart();
       const summaryText = typeof genericHeartbeatEnabled === "boolean"
