@@ -73,16 +73,28 @@ heartbeat/goal interval overrides.
 
 ### Cache Keepalive Heartbeat
 
-`idle_time_heartbeat_control` is an LLM-callable tool that enables or disables
-an idle heartbeat for the current session. When enabled, after the configured
-number of minutes of inactivity the extension sends a short user message
-(`idleHeartbeatMessage`, with `{time}` replaced by the current time). This
-triggers a real assistant turn, refreshing the Anthropic prompt cache.
+`idle_time_heartbeat_control` is an LLM-callable tool that controls the idle
+heartbeat and idle goals via an explicit `action` parameter:
+
+| action | Effect |
+|--------|--------|
+| `status` (default) | Read-only query of current state |
+| `enable` / `disable` | Toggle generic cache-keepalive heartbeat |
+| `set_goal` | Set idle goal (`goal` string required) |
+| `complete_goal` | Mark active goal complete |
+| `clear_goal` | Drop goal without completing |
+
+When keepalive is enabled, after the configured minutes of inactivity the
+extension sends a short user message (`idleHeartbeatMessage`, with `{time}`
+replaced by the current time). This triggers a real assistant turn, refreshing
+the Anthropic prompt cache.
 
 The heartbeat is **opt-in and disabled by default** because each firing consumes
-tokens and produces a visible chat message. The agent can toggle it during a
-session with `genericHeartbeatEnabled`; the enabled state persists globally
+tokens and produces a visible chat message. The enabled state persists globally
 across `/reload`.
+
+Idle goal and heartbeat timers are never armed or delivered while an agent turn
+is in progress (including follow-up turns from prior reminders).
 
 ### Idle Goal Reminders
 
@@ -93,21 +105,20 @@ across `/reload`.
 [goal reminder] HH:MM:SS
 <description>
 
-<system-reminder>Use idle_time_heartbeat_control with completeGoal=true only when the underlying task is actually finished. Idle does not mean done, and receiving this reminder does not mean the goal is complete. If work is still in progress, leave the goal active and continue working or send a status update.</system-reminder>
+<system-reminder>Use idle_time_heartbeat_control with action=complete_goal only when the underlying task is actually finished. Idle does not mean done, and receiving this reminder does not mean the goal is complete. If work is still in progress, leave the goal active and continue working or send a status update.</system-reminder>
 ```
 
 The user sees a compact TUI render (`🎯 idle goal · <preview> · <time> · <interval>`);
 the LLM sees the full block above. Goal reminders take precedence over the
 keepalive heartbeat while a goal is active. The agent can set or complete goals
-via the `goal` and `completeGoal` parameters on `idle_time_heartbeat_control`.
-The active goal persists per session in the state file.
+via `action: "set_goal"` / `action: "complete_goal"` on
+`idle_time_heartbeat_control`. The active goal persists per session in the
+state file.
 
-A `minutes` override provided when setting a goal is remembered for that goal,
-and a `minutes` override provided when enabling the heartbeat is remembered for
-the heartbeat. `genericHeartbeatEnabled` controls the generic heartbeat
-independently from `goal`/`completeGoal`; the legacy `enabled` field is only a
-heartbeat toggle when no goal action is present. Goal reminders run regardless
-of the generic heartbeat enabled state while a goal is active.
+A `minutes` override provided with `set_goal` is remembered for that goal, and
+a `minutes` override with `enable` is remembered for the heartbeat. Goal
+reminders run regardless of the generic heartbeat enabled state while a goal
+is active.
 
 ## Development
 

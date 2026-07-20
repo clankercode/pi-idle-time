@@ -347,7 +347,7 @@ describe("idleTimeExtension", () => {
     };
     assert.ok(tool, "expected heartbeat control tool");
 
-    const result = await tool.execute("call-1", { enabled: true, minutes: 4.5 });
+    const result = await tool.execute("call-1", { action: "enable", minutes: 4.5 });
     assert.deepEqual(result, {
       content: [{ type: "text", text: "Idle heartbeat enabled for this session. Interval: 4.5 minutes." }],
       details: { enabled: true, intervalMinutes: 4.5, activeGoal: null, goalActionText: "" },
@@ -713,9 +713,9 @@ describe("idleTimeExtension", () => {
 
       const tool = findTool(tools);
       assert.ok(tool, "expected heartbeat control tool");
-      await tool.execute("call-0", { enabled: false });
+      await tool.execute("call-0", { action: "disable" });
 
-      const result = await tool.execute("call-1", { goal: "refactor the auth module" });
+      const result = await tool.execute("call-1", { action: "set_goal", goal: "refactor the auth module" });
       assert.deepEqual(result, {
         content: [
           {
@@ -741,9 +741,9 @@ describe("idleTimeExtension", () => {
       await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
     });
 
-    it("does not treat legacy enabled as a generic heartbeat toggle when setting a goal", async () => {
+    it("set_goal does not enable the generic heartbeat", async () => {
       const { pi, tools, emit } = createMockPi();
-      const sessionId = "session-tool-goal-legacy-enabled";
+      const sessionId = "session-tool-goal-no-enable";
       const ctx = createMockCtx(sessionId, "model-1");
 
       idleTimeExtension(pi);
@@ -751,9 +751,9 @@ describe("idleTimeExtension", () => {
       await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
 
       const tool = findTool(tools);
-      await tool.execute("call-0", { enabled: false });
-      await tool.execute("call-1", { enabled: true, goal: "refactor the auth module" });
-      const result = await tool.execute("call-2", { completeGoal: true });
+      await tool.execute("call-0", { action: "disable" });
+      await tool.execute("call-1", { action: "set_goal", goal: "refactor the auth module" });
+      const result = await tool.execute("call-2", { action: "complete_goal" });
 
       assert.deepEqual(result, {
         content: [
@@ -790,14 +790,20 @@ describe("idleTimeExtension", () => {
       await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
 
       const tool = findTool(tools);
-      await tool.execute("call-1", { genericHeartbeatEnabled: true, goal: "refactor the auth module" });
-      const result = await tool.execute("call-2", { genericHeartbeatEnabled: true, completeGoal: true });
+      await tool.execute("call-1", { action: "enable" });
+      await tool.execute("call-1b", { action: "set_goal", goal: "refactor the auth module" });
+      const enableAgain = await tool.execute("call-2a", { action: "enable" });
+      assert.equal(
+        (enableAgain as { details: { enabled: boolean } }).details.enabled,
+        true,
+      );
+      const result = await tool.execute("call-2", { action: "complete_goal" });
 
       assert.deepEqual(result, {
         content: [
           {
             type: "text",
-            text: "Idle heartbeat enabled for this session. Interval: 4.5 minutes. Goal marked complete.",
+            text: "Idle goal marked complete.",
           },
         ],
         details: {
@@ -818,7 +824,7 @@ describe("idleTimeExtension", () => {
       await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
     });
 
-    it("completes a goal via the tool without requiring enabled", async () => {
+    it("completes a goal via the tool without requiring enable", async () => {
       const { pi, tools, emit } = createMockPi();
       const sessionId = "session-tool-complete-no-enabled";
       const ctx = createMockCtx(sessionId, "model-1");
@@ -828,8 +834,9 @@ describe("idleTimeExtension", () => {
       await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
 
       const tool = findTool(tools);
-      await tool.execute("call-1", { genericHeartbeatEnabled: true, goal: "refactor the auth module" });
-      const result = await tool.execute("call-2", { completeGoal: true });
+      await tool.execute("call-1", { action: "enable" });
+      await tool.execute("call-1b", { action: "set_goal", goal: "refactor the auth module" });
+      const result = await tool.execute("call-2", { action: "complete_goal" });
 
       assert.deepEqual(result, {
         content: [
@@ -870,8 +877,9 @@ describe("idleTimeExtension", () => {
       await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
 
       const tool = findTool(tools);
-      await tool.execute("call-1", { genericHeartbeatEnabled: true, goal: "refactor the auth module", minutes: 0.001 });
-      const result = await tool.execute("call-2", { goal: "" });
+      await tool.execute("call-1", { action: "enable", minutes: 0.001 });
+      await tool.execute("call-1b", { action: "set_goal", goal: "refactor the auth module", minutes: 0.001 });
+      const result = await tool.execute("call-2", { action: "clear_goal" });
 
       assert.deepEqual(result, {
         content: [
@@ -946,7 +954,12 @@ describe("idleTimeExtension", () => {
       await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
 
       const tool = findTool(tools);
-      await tool.execute("call-1", { genericHeartbeatEnabled: true, goal: "refactor the auth module", minutes: 0.001 });
+      await tool.execute("call-1", { action: "enable", minutes: 0.001 });
+      await tool.execute("call-1b", {
+        action: "set_goal",
+        goal: "refactor the auth module",
+        minutes: 0.001,
+      });
 
       await delay(120);
 
@@ -989,7 +1002,11 @@ describe("idleTimeExtension", () => {
       await emit("agent_start", { type: "agent_start" }, ctx);
 
       const tool = findTool(tools);
-      await tool.execute("call-1", { goal: "refactor the auth module", minutes: 0.001 });
+      await tool.execute("call-1", {
+        action: "set_goal",
+        goal: "refactor the auth module",
+        minutes: 0.001,
+      });
 
       await delay(120);
 
@@ -1005,6 +1022,140 @@ describe("idleTimeExtension", () => {
         (entry) => (entry as { message?: { customType?: string } }).message?.customType === "idle-time-goal",
       );
       assert.equal(goalMessagesAfterStop.length, 1, "expected goal reminder after the turn ended");
+
+      await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+    });
+
+    it("does not fire mid follow-up turn when set_goal runs after idle already elapsed", async () => {
+      // Reproduces: agent_end left lastResponseAt in the past; a triggerTurn/follow-up
+      // turn starts without user input; agent sets a short-interval goal; past-due timer
+      // must NOT fire while the turn is still running.
+      const dataDir = path.join(tmpDir, ".pi", "idle-time");
+      fs.mkdirSync(dataDir, { recursive: true });
+      fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ idleHeartbeatMinutes: 0.001 }));
+
+      const { pi, sentMessages, tools, emit } = createMockPi();
+      const sessionId = "session-goal-followup-midturn";
+      const ctx = createMockCtx(sessionId, "model-1");
+
+      idleTimeExtension(pi);
+      await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+      // Idle already elapsed relative to short interval; no user input — only agent_start
+      // (matches tool-triggered follow-up turns after a prior goal/state message).
+      await delay(50);
+      await emit("agent_start", { type: "agent_start" }, ctx);
+
+      const tool = findTool(tools);
+      await tool.execute("call-1", {
+        action: "set_goal",
+        goal: "stale-or-current goal while follow-up runs",
+        minutes: 0.001,
+      });
+
+      await delay(150);
+
+      const goalBeforeEnd = sentMessages.filter(
+        (entry) => (entry as { message?: { customType?: string } }).message?.customType === "idle-time-goal",
+      );
+      const hbBeforeEnd = sentMessages.filter(
+        (entry) => (entry as { message?: { customType?: string } }).message?.customType === "idle-time-heartbeat",
+      );
+      assert.equal(goalBeforeEnd.length, 0, "expected 0 goal reminders mid follow-up turn");
+      assert.equal(hbBeforeEnd.length, 0, "expected 0 heartbeat keepalives mid follow-up turn");
+
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+      await delay(250);
+
+      const goalAfterEnd = sentMessages.filter(
+        (entry) => (entry as { message?: { customType?: string } }).message?.customType === "idle-time-goal",
+      );
+      assert.equal(goalAfterEnd.length, 1, "expected exactly one goal reminder after idle from true last response");
+
+      await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+    });
+
+    it("rapid mid-turn set_goal / replace / complete delivers no reminder; none after complete", async () => {
+      const dataDir = path.join(tmpDir, ".pi", "idle-time");
+      fs.mkdirSync(dataDir, { recursive: true });
+      fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ idleHeartbeatMinutes: 0.001 }));
+
+      const { pi, sentMessages, tools, emit } = createMockPi();
+      const sessionId = "session-goal-rapid-replace-complete";
+      const ctx = createMockCtx(sessionId, "model-1");
+
+      idleTimeExtension(pi);
+      await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+      await delay(50);
+      // Follow-up-style turn (no user input)
+      await emit("agent_start", { type: "agent_start" }, ctx);
+
+      const tool = findTool(tools);
+      await tool.execute("call-a", { action: "set_goal", goal: "goal A superseded", minutes: 0.001 });
+      await tool.execute("call-b", { action: "set_goal", goal: "goal B also dropped", minutes: 0.001 });
+      await tool.execute("call-c", { action: "complete_goal" });
+
+      await delay(150);
+
+      const midTurnGoals = sentMessages.filter(
+        (entry) => (entry as { message?: { customType?: string } }).message?.customType === "idle-time-goal",
+      );
+      assert.equal(midTurnGoals.length, 0, "expected no mid-turn goal reminders during multi-goal churn");
+
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+      await delay(250);
+
+      const afterEndGoals = sentMessages.filter(
+        (entry) => (entry as { message?: { customType?: string } }).message?.customType === "idle-time-goal",
+      );
+      assert.equal(afterEndGoals.length, 0, "expected no goal reminder after complete left no active goal");
+
+      await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+    });
+
+    it("rapid mid-turn replace keeps only the final goal; one reminder after agent_end idle", async () => {
+      const dataDir = path.join(tmpDir, ".pi", "idle-time");
+      fs.mkdirSync(dataDir, { recursive: true });
+      fs.writeFileSync(path.join(dataDir, "config.json"), JSON.stringify({ idleHeartbeatMinutes: 0.001 }));
+
+      const { pi, sentMessages, tools, emit } = createMockPi();
+      const sessionId = "session-goal-rapid-replace-keep";
+      const ctx = createMockCtx(sessionId, "model-1");
+
+      idleTimeExtension(pi);
+      await emit<SessionStartEvent>("session_start", { type: "session_start", reason: "startup" }, ctx);
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+      await delay(50);
+      await emit("agent_start", { type: "agent_start" }, ctx);
+
+      const tool = findTool(tools);
+      await tool.execute("call-a", { action: "set_goal", goal: "goal A", minutes: 0.001 });
+      await tool.execute("call-b", { action: "set_goal", goal: "goal B final", minutes: 0.001 });
+
+      await delay(150);
+
+      assert.equal(
+        sentMessages.filter(
+          (entry) => (entry as { message?: { customType?: string } }).message?.customType === "idle-time-goal",
+        ).length,
+        0,
+        "expected no mid-turn goal fire after multi set_goal",
+      );
+
+      await emit<AgentEndEvent>("agent_end", { type: "agent_end", messages: [] }, ctx);
+      await delay(250);
+
+      const goals = sentMessages.filter(
+        (entry) => (entry as { message?: { customType?: string } }).message?.customType === "idle-time-goal",
+      );
+      assert.equal(goals.length, 1, "expected one reminder for the final active goal");
+      const content = (goals[0] as { message: { content: string } }).message.content;
+      assert.match(content, /goal B final/);
+      assert.doesNotMatch(content, /goal A\b/);
 
       await emit<SessionShutdownEvent>("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
     });

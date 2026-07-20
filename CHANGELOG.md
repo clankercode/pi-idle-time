@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Stale idle goal reminders (and keepalives) could fire mid-turn when the agent
+  was active on a **follow-up** turn (e.g. after a prior goal/state message with
+  `triggerTurn`). `isAgentActive` was only set on user `input`, so `agent_start`
+  for follow-up turns left busy=false; `set_goal` with a past-due last-response
+  time armed an immediate timer and delivered a reminder while work continued.
+  Busy is now set for the whole turn from `agent_start` through `agent_end`,
+  and fire paths re-check busy before delivery.
+
+### Changed
+
+- Simplified `idle_time_heartbeat_control` to an explicit `action` model:
+  `status` | `enable` | `disable` | `set_goal` | `complete_goal` | `clear_goal`
+  (plus optional `minutes` / `goal`). Removed overlapping
+  `genericHeartbeatEnabled` / deprecated `enabled` / `completeGoal` dual-toggle
+  rules. Goal reminders remain independent of keepalive enable and still take
+  precedence while a goal is active.
+
 ## 0.4.3 — 2026-07-11
 
 ### Fixed

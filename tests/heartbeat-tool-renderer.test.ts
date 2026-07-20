@@ -41,7 +41,7 @@ function wrapInContainer(children: Component[]): Container {
 describe("heartbeat-tool-renderer", () => {
   describe("renderHeartbeatCall", () => {
     it("renders zero lines (call is suppressed — result conveys state)", () => {
-      const component = renderHeartbeatCall({ enabled: true } as HeartbeatCallArgs, plainTheme);
+      const component = renderHeartbeatCall({ action: "enable" } as HeartbeatCallArgs, plainTheme);
       const lines = collectLines(component);
       assert.equal(lines.length, 0, "call slot must produce no visible content");
     });
@@ -130,7 +130,7 @@ describe("heartbeat-tool-renderer", () => {
     it("renders to a single content line (the result) plus call-suppression", () => {
       // Simulate what ToolExecutionComponent does: wrap both in a Container.
       // With renderCall suppressed, only the result's single line should appear.
-      const call = renderHeartbeatCall({ enabled: true } as HeartbeatCallArgs, plainTheme);
+      const call = renderHeartbeatCall({ action: "enable" } as HeartbeatCallArgs, plainTheme);
       const result = renderHeartbeatResult(
         { enabled: true, intervalMinutes: 4.5 } as HeartbeatResultDetails,
         false,
@@ -146,7 +146,7 @@ describe("heartbeat-tool-renderer", () => {
 
     it("matches the recommended pi-monitor pattern (renderMonitorListCall returns empty Text)", () => {
       // Sanity check: the empty-Text pattern is officially supported.
-      const call = renderHeartbeatCall({ enabled: true } as HeartbeatCallArgs, plainTheme);
+      const call = renderHeartbeatCall({ action: "enable" } as HeartbeatCallArgs, plainTheme);
       assert.ok(call instanceof Text);
       assert.equal(joinLines(call), "");
     });

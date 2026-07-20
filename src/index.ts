@@ -129,6 +129,36 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
     return resolveIntervalMinutes(undefined, goalIntervalMinutes);
   }
 
+  function deliverHeartbeatMessage(intervalMinutes: number): void {
+    // Defense in depth: never deliver while a turn is in progress, even if a
+    // timer was armed incorrectly (e.g. past-due setTimeout(0) race).
+    if (isAgentActive) {
+      stopHeartbeat();
+      return;
+    }
+    if (activeGoal || !heartbeatEnabled) {
+      stopHeartbeat();
+      return;
+    }
+    try {
+      const config = getConfig();
+      const message = heartbeatTimer?.formatMessage() ?? config.idleHeartbeatMessage;
+      const time = heartbeatTimer?.formatCompactTime() ?? "";
+      const details: HeartbeatMessageDetails = { time, intervalMinutes };
+      pi.sendMessage(
+        {
+          customType: HEARTBEAT_CUSTOM_TYPE,
+          content: message,
+          display: true,
+          details,
+        },
+        { triggerTurn: true, deliverAs: "followUp" },
+      );
+    } catch (error) {
+      logError({ dataDir, sessionId, hook: "heartbeat", error });
+    }
+  }
+
   function maybeStartHeartbeat(intervalOverride?: number): void {
     if (!sessionId) return;
     if (isAgentActive) {
@@ -157,24 +187,7 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
       heartbeatTimer = new HeartbeatTimer({
         intervalMinutes,
         messageTemplate: config.idleHeartbeatMessage,
-        onFire: () => {
-          try {
-            const message = heartbeatTimer?.formatMessage() ?? config.idleHeartbeatMessage;
-            const time = heartbeatTimer?.formatCompactTime() ?? "";
-            const details: HeartbeatMessageDetails = { time, intervalMinutes };
-            pi.sendMessage(
-              {
-                customType: HEARTBEAT_CUSTOM_TYPE,
-                content: message,
-                display: true,
-                details,
-              },
-              { triggerTurn: true, deliverAs: "followUp" },
-            );
-          } catch (error) {
-            logError({ dataDir, sessionId, hook: "heartbeat", error });
-          }
-        },
+        onFire: () => deliverHeartbeatMessage(intervalMinutes),
       });
     } else {
       heartbeatTimer.configure({ messageTemplate: config.idleHeartbeatMessage });
@@ -187,6 +200,11 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
   }
 
   function sendGoalReminder(intervalMinutes: number): void {
+    // Defense in depth: never deliver while a turn is in progress.
+    if (isAgentActive) {
+      stopGoalTimer();
+      return;
+    }
     if (!sessionId || !activeGoal) return;
     try {
       const time = goalTimer?.formatCompactTime() ?? "";
@@ -572,10 +590,18 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
     }
   });
 
-  // --- Agent end: record stop timestamps and turn duration ---
+  // --- Agent start: mark busy for the whole turn (incl. follow-up/triggerTurn) ---
 
   pi.on("agent_start", async () => {
     if (!sessionId) return;
+    // Busy for user-started AND follow-up turns (goal/heartbeat/state triggerTurn).
+    // Without this, set-goal mid follow-up turn re-arms past-due timers and fires
+    // stale reminders while the agent is still working.
+    isAgentActive = true;
+    if (!turnStartAt) {
+      turnStartAt = getNowIso();
+      turnDurationFrozen = null;
+    }
     stopAllIdleTimers();
   });
 
@@ -938,43 +964,93 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
     },
   });
 
-  // --- Heartbeat control tool ---
+  // --- Heartbeat / goal control tool ---
+
+  type ControlAction =
+    | "status"
+    | "enable"
+    | "disable"
+    | "set_goal"
+    | "complete_goal"
+    | "clear_goal";
+
+  function statusToolResult(): {
+    content: [{ type: "text"; text: string }];
+    details: HeartbeatResultDetails;
+  } {
+    const fields = snapshotStateFields();
+    const intervalMinutes = activeGoal
+      ? getCurrentGoalIntervalMinutes()
+      : getCurrentHeartbeatIntervalMinutes();
+    const summaryText = [
+      "[idle-time status]",
+      `heartbeat_enabled=${fields.heartbeat_enabled}`,
+      `heartbeat_interval_minutes=${fields.heartbeat_interval_minutes ?? "(config/default)"}`,
+      `active_goal=${fields.active_goal ?? "(none)"}`,
+      `goal_interval_minutes=${fields.goal_interval_minutes ?? "(config/default)"}`,
+    ].join("\n");
+    return {
+      content: [{ type: "text", text: summaryText }],
+      details: {
+        enabled: heartbeatEnabled,
+        intervalMinutes,
+        activeGoal,
+        goalActionText: "",
+      },
+    };
+  }
+
+  function controlToolResult(summaryText: string, goalActionText: string): {
+    content: [{ type: "text"; text: string }];
+    details: HeartbeatResultDetails;
+  } {
+    const intervalMinutes = activeGoal
+      ? getCurrentGoalIntervalMinutes()
+      : getCurrentHeartbeatIntervalMinutes();
+    return {
+      content: [{ type: "text", text: summaryText }],
+      details: {
+        enabled: heartbeatEnabled,
+        intervalMinutes,
+        activeGoal,
+        goalActionText,
+      },
+    };
+  }
 
   pi.registerTool({
     name: "idle_time_heartbeat_control",
     label: "Idle Heartbeat Control",
     description:
-      "Control the generic idle cache-keepalive heartbeat and optionally set or complete an idle goal reminder. Goal reminders are independent from the generic heartbeat: setting or completing a goal does not enable the generic heartbeat unless genericHeartbeatEnabled is provided. When either reminder type fires, it sends a visible message that triggers a real LLM response and consumes tokens.",
+      "Control idle cache-keepalive heartbeat and idle goal reminders. Use action: status (or omit) to read state; enable/disable for the generic keepalive; set_goal with goal text; complete_goal when the task is actually finished; clear_goal to drop the goal without completing it. Goal reminders run independently of keepalive enable and take precedence while a goal is active. Firing either reminder sends a visible message that triggers a real LLM turn and consumes tokens.",
     parameters: Type.Object({
-      genericHeartbeatEnabled: Type.Optional(
-        Type.Boolean({
-          description:
-            "Whether the generic cache-keepalive heartbeat should be active independently of idle goals. Omit this when only setting, clearing, or completing an idle goal.",
-        }),
-      ),
-      enabled: Type.Optional(
-        Type.Boolean({
-          description:
-            "Deprecated alias for genericHeartbeatEnabled. For backward compatibility this is only treated as a generic heartbeat toggle when no goal or completeGoal action is provided.",
-        }),
+      action: Type.Optional(
+        Type.Union(
+          [
+            Type.Literal("status"),
+            Type.Literal("enable"),
+            Type.Literal("disable"),
+            Type.Literal("set_goal"),
+            Type.Literal("complete_goal"),
+            Type.Literal("clear_goal"),
+          ],
+          {
+            description:
+              "status (default): read current state. enable/disable: generic keepalive. set_goal: require goal string. complete_goal: mark active goal done. clear_goal: drop goal without completing.",
+          },
+        ),
       ),
       minutes: Type.Optional(
         Type.Number({
           description:
-            "Optional override for the heartbeat interval in minutes. Must be positive. If omitted, the global config value idleHeartbeatMinutes is used.",
+            "Optional interval override in minutes (positive). Applies with enable (heartbeat interval) or set_goal (goal reminder interval). Falls back to config idleHeartbeatMinutes, then 4.5.",
           minimum: 0.1,
         }),
       ),
       goal: Type.Optional(
         Type.String({
           description:
-            "Optional idle goal description. When provided, a goal reminder replaces the keepalive heartbeat until the goal is completed. Pass an empty string to clear the current goal without completing it.",
-        }),
-      ),
-      completeGoal: Type.Optional(
-        Type.Boolean({
-          description:
-            "Mark the current idle goal as complete. This clears the goal and resumes the generic heartbeat only if genericHeartbeatEnabled was already enabled independently. Ignored if goal is also provided (the new goal takes precedence).",
+            "Idle goal description. Required when action is set_goal. Ignored for other actions.",
         }),
       ),
     }),
@@ -988,86 +1064,57 @@ export default function idleTimeExtension(pi: ExtensionAPI): void {
         theme,
       ),
     async execute(_toolCallId, params, _signal, _onUpdate, _toolCtx) {
-      let goalActionText = "";
-      let intervalMinutes = getCurrentHeartbeatIntervalMinutes();
+      const rawAction = typeof params.action === "string" ? params.action.trim() : "";
+      const action = (rawAction.length > 0 ? rawAction : "status") as ControlAction;
 
-      const wantsQuery =
-        params.genericHeartbeatEnabled === undefined &&
-        params.enabled === undefined &&
-        params.minutes === undefined &&
-        params.goal === undefined &&
-        params.completeGoal === undefined;
+      if (action === "status") {
+        return statusToolResult();
+      }
 
-      if (typeof params.goal === "string") {
-        if (params.goal.trim().length === 0) {
-          await setActiveGoal(null);
-          goalActionText = " Goal cleared.";
-        } else {
-          await setActiveGoal(params.goal.trim(), params.minutes);
-          goalActionText = ` Goal set: ${params.goal.trim()}`;
+      if (action === "enable" || action === "disable") {
+        const enabled = action === "enable";
+        const intervalMinutes = await setHeartbeatEnabled(enabled, params.minutes);
+        const summaryText = `Idle heartbeat ${enabled ? "enabled" : "disabled"} for this session.${
+          enabled ? ` Interval: ${intervalMinutes} minutes.` : ""
+        }`;
+        return controlToolResult(summaryText, "");
+      }
+
+      if (action === "set_goal") {
+        const goalText = typeof params.goal === "string" ? params.goal.trim() : "";
+        if (goalText.length === 0) {
+          return controlToolResult(
+            "set_goal requires a non-empty goal string.",
+            " set_goal missing goal text.",
+          );
         }
-      } else if (params.completeGoal) {
+        await setActiveGoal(goalText, params.minutes);
+        return controlToolResult(
+          `Idle goal set: ${goalText}`,
+          ` Goal set: ${goalText}`,
+        );
+      }
+
+      if (action === "clear_goal") {
+        await setActiveGoal(null);
+        return controlToolResult("Idle goal cleared.", " Goal cleared.");
+      }
+
+      if (action === "complete_goal") {
         if (activeGoal) {
           await completeGoal();
-          goalActionText = " Goal marked complete.";
-        } else {
-          goalActionText = " No active goal to complete.";
+          return controlToolResult("Idle goal marked complete.", " Goal marked complete.");
         }
+        return controlToolResult(
+          "No active goal to complete.",
+          " No active goal to complete.",
+        );
       }
 
-      const hasGoalAction = typeof params.goal === "string" || Boolean(params.completeGoal);
-      const genericHeartbeatEnabled = typeof params.genericHeartbeatEnabled === "boolean"
-        ? params.genericHeartbeatEnabled
-        : !hasGoalAction && typeof params.enabled === "boolean"
-          ? params.enabled
-          : undefined;
-
-      if (typeof genericHeartbeatEnabled === "boolean") {
-        intervalMinutes = await setHeartbeatEnabled(genericHeartbeatEnabled, params.minutes);
-      }
-
-      intervalMinutes = activeGoal
-        ? getCurrentGoalIntervalMinutes()
-        : getCurrentHeartbeatIntervalMinutes();
-
-      if (wantsQuery) {
-        const fields = snapshotStateFields();
-        const summaryText = [
-          "[idle-time status]",
-          `heartbeat_enabled=${fields.heartbeat_enabled}`,
-          `heartbeat_interval_minutes=${fields.heartbeat_interval_minutes ?? "(config/default)"}`,
-          `active_goal=${fields.active_goal ?? "(none)"}`,
-          `goal_interval_minutes=${fields.goal_interval_minutes ?? "(config/default)"}`,
-        ].join("\n");
-        return {
-          content: [{ type: "text", text: summaryText }],
-          details: {
-            enabled: heartbeatEnabled,
-            intervalMinutes,
-            activeGoal,
-            goalActionText: "",
-          },
-        };
-      }
-
-      const goalSummary = goalActionText.trimStart();
-      const summaryText = typeof genericHeartbeatEnabled === "boolean"
-        ? `Idle heartbeat ${heartbeatEnabled ? "enabled" : "disabled"} for this session.${
-            heartbeatEnabled ? ` Interval: ${intervalMinutes} minutes.` : ""
-          }${goalActionText}`
-        : goalSummary.length > 0
-          ? `Idle ${goalSummary.charAt(0).toLowerCase()}${goalSummary.slice(1)}`
-          : "No idle-time changes applied.";
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: summaryText,
-          },
-        ],
-        details: { enabled: heartbeatEnabled, intervalMinutes, activeGoal, goalActionText },
-      };
+      return controlToolResult(
+        `Unknown action: ${action}. Use status | enable | disable | set_goal | complete_goal | clear_goal.`,
+        "",
+      );
     },
   });
 }

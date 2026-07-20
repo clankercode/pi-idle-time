@@ -101,35 +101,36 @@ the LLM's context.
 ## Tool: `idle_time_heartbeat_control`
 
 LLM-callable tool that controls the idle heartbeat and idle goal for
-the current session.
+the current session via an explicit `action`:
 
 ```ts
-idle_time_heartbeat_control(genericHeartbeatEnabled: true, minutes: 4.5)
-idle_time_heartbeat_control(genericHeartbeatEnabled: false)
-idle_time_heartbeat_control(goal: "draft release notes for v0.4.1")
-idle_time_heartbeat_control(completeGoal: true)
+idle_time_heartbeat_control({ action: "enable", minutes: 4.5 })
+idle_time_heartbeat_control({ action: "disable" })
+idle_time_heartbeat_control({ action: "set_goal", goal: "draft release notes for v0.4.1" })
+idle_time_heartbeat_control({ action: "complete_goal" })
+idle_time_heartbeat_control({ action: "clear_goal" })
+idle_time_heartbeat_control({}) // or action: "status"
 ```
 
-- `genericHeartbeatEnabled` (boolean, optional) — whether the generic
-  cache-keepalive heartbeat should be active independently of goals.
-  Omit when only changing the goal.
-- `enabled` (boolean, optional, deprecated) — legacy alias for
-  `genericHeartbeatEnabled`. For backward compatibility it is only
-  treated as a heartbeat toggle when no `goal` or `completeGoal` action
-  is provided.
-- `minutes` (number, optional) — override the interval. Must be positive.
-  Falls back to `config.idleHeartbeatMinutes`, then 4.5. Remembered per
-  session per mode (heartbeat vs. goal).
-- `goal` (string, optional) — set the idle goal description. Pass an
-  empty string to clear without completing. Setting a goal does not
-  enable the generic heartbeat.
-- `completeGoal` (boolean, optional) — mark the active goal complete.
-  This resumes the generic heartbeat only if it was independently
-  enabled. Ignored when `goal` is also set.
+- `action` (string, optional) — one of:
+  - `status` (default when omitted) — read-only query of current state
+  - `enable` / `disable` — toggle the generic cache-keepalive heartbeat
+  - `set_goal` — set the idle goal (requires non-empty `goal`)
+  - `complete_goal` — mark the active goal complete
+  - `clear_goal` — drop the goal without marking it complete
+- `minutes` (number, optional) — interval override (positive). Applies
+  with `enable` (heartbeat interval) or `set_goal` (goal reminder
+  interval). Falls back to `config.idleHeartbeatMinutes`, then 4.5.
+  Remembered per session per mode.
+- `goal` (string, optional) — required for `set_goal`. Setting a goal
+  does not enable the generic heartbeat.
 
-Calling the tool with no parameters is a read-only query that returns
-the current active goal, heartbeat enabled state, and effective
-interval for each — see [Querying current state](#querying-current-state).
+Goal reminders run independently of keepalive enable and take
+precedence while a goal is active. Completing a goal resumes the
+generic heartbeat only if it was independently enabled.
+
+See [Querying current state](#querying-current-state) for the status
+response shape.
 
 The generic heartbeat enabled state persists across `/reload` via
 `~/.pi/idle-time/global.json`. The active goal persists per session in
@@ -146,7 +147,7 @@ interval of inactivity the extension sends the LLM:
 [goal reminder] HH:MM:SS
 <description>
 
-<system-reminder>Use idle_time_heartbeat_control with completeGoal=true only when the underlying task is actually finished. Idle does not mean done, and receiving this reminder does not mean the goal is complete. If work is still in progress, leave the goal active and continue working or send a status update.</system-reminder>
+<system-reminder>Use idle_time_heartbeat_control with action=complete_goal only when the underlying task is actually finished. Idle does not mean done, and receiving this reminder does not mean the goal is complete. If work is still in progress, leave the goal active and continue working or send a status update.</system-reminder>
 ```
 
 The user sees a compact TUI render
@@ -327,10 +328,12 @@ verify the current idle-time configuration.
 - **Statusline idle threshold is 1 second** (not 10). The statusline
   indicator `💤` appears after just 1s of idle; the duration counter
   starts at the same point.
-- **Heartbeat only fires when the agent is idle.** The timer is
-  stopped on `agent_start` and `input`. When the timer fires, the
-  message is sent with `deliverAs: "followUp"` so it queues properly
-  if the agent is busy.
+- **Heartbeat and goal reminders only fire when the agent is idle.**
+  The agent is marked busy for the whole turn from `agent_start`
+  through `agent_end` (including follow-up turns with no user input).
+  Timers are stopped while busy and are not re-armed by mid-turn
+  `set_goal` / enable calls; fire paths re-check busy before delivery.
+  When a reminder does fire, it is sent with `deliverAs: "followUp"`.
 - **Timing block uses `display: false`.** It is sent to the LLM as a
   user-role message but does not appear in the TUI transcript. The
   `agent_end` event also fires a `display: false` `idle-time` message
