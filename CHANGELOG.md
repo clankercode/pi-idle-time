@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 — 2026-07-20
 
 ### Fixed
 
@@ -14,12 +14,17 @@
 
 ### Changed
 
-- Simplified `idle_time_heartbeat_control` to an explicit `action` model:
-  `status` | `enable` | `disable` | `set_goal` | `complete_goal` | `clear_goal`
-  (plus optional `minutes` / `goal`). Removed overlapping
+- **Breaking:** simplified `idle_time_heartbeat_control` to an explicit `action`
+  model: `status` | `enable` | `disable` | `set_goal` | `complete_goal` |
+  `clear_goal` (plus optional `minutes` / `goal`). Removed overlapping
   `genericHeartbeatEnabled` / deprecated `enabled` / `completeGoal` dual-toggle
   rules. Goal reminders remain independent of keepalive enable and still take
   precedence while a goal is active.
+
+### Tests
+
+- Regression coverage for follow-up mid-turn `set_goal`, rapid multi-goal
+  replace/complete, and post-`agent_end` single fire for the final active goal.
 
 ## 0.4.3 — 2026-07-11
 
